@@ -1,0 +1,1150 @@
+import streamlit as st
+import sqlite3
+import time
+from datetime import datetime, timedelta, date
+import os
+
+# --- Database Layer: Supports Supabase (cloud) and SQLite (local fallback) ---
+use_supabase = False
+sb = None
+try:
+    supabase_url = st.secrets.get("supabase", {}).get("url", os.environ.get("SUPABASE_URL", ""))
+    supabase_key = st.secrets.get("supabase", {}).get("key", os.environ.get("SUPABASE_KEY", ""))
+    if supabase_url and supabase_key:
+        from supabase import create_client
+        sb = create_client(supabase_url, supabase_key)
+        use_supabase = True
+except:
+    pass
+
+def get_db():
+    conn = sqlite3.connect("farm_data.db")
+    conn.row_factory = sqlite3.Row
+    return conn
+
+def db_get_user_by_username(username):
+    if use_supabase:
+        result = sb.table("users").select("*").eq("username", username).execute()
+        return result.data[0] if result.data else None
+    conn = get_db()
+    cur = conn.execute("SELECT * FROM users WHERE username = ?", (username,))
+    row = cur.fetchone()
+    conn.close()
+    return dict(row) if row else None
+
+def db_get_user_by_id(user_id):
+    if use_supabase:
+        result = sb.table("users").select("*").eq("id", user_id).execute()
+        return result.data[0] if result.data else None
+    conn = get_db()
+    cur = conn.execute("SELECT * FROM users WHERE id = ?", (user_id,))
+    row = cur.fetchone()
+    conn.close()
+    return dict(row) if row else None
+
+def db_insert_user(username, password, is_activated=0):
+    if use_supabase:
+        result = sb.table("users").insert({"username": username, "password": password, "is_activated": is_activated}).execute()
+        return result.data[0]["id"] if result.data else None
+    conn = get_db()
+    conn.execute("INSERT INTO users (username, password, is_activated) VALUES (?, ?, ?)", (username, password, is_activated))
+    conn.commit()
+    cur = conn.execute("SELECT id FROM users WHERE username = ?", (username,))
+    user_id = cur.fetchone()["id"]
+    conn.close()
+    return user_id
+
+def db_update_user(user_id, updates):
+    if use_supabase:
+        sb.table("users").update(updates).eq("id", user_id).execute()
+        return
+    conn = get_db()
+    set_parts = ", ".join(f"{k} = ?" for k in updates)
+    vals = list(updates.values()) + [user_id]
+    conn.execute(f"UPDATE users SET {set_parts} WHERE id = ?", vals)
+    conn.commit()
+    conn.close()
+
+def db_get_farm_dates(user_id):
+    if use_supabase:
+        result = sb.table("farm_dates").select("*").eq("user_id", user_id).execute()
+        return result.data if result.data else []
+    conn = get_db()
+    rows = conn.execute("SELECT * FROM farm_dates WHERE user_id = ?", (user_id,)).fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+def db_get_sales_records(user_id):
+    if use_supabase:
+        result = sb.table("sales_records").select("*").eq("user_id", user_id).execute()
+        return result.data if result.data else []
+    conn = get_db()
+    rows = conn.execute("SELECT * FROM sales_records WHERE user_id = ?", (user_id,)).fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+def db_upsert_farm_date(user_id, dk, entry):
+    data = {
+        "user_id": user_id, "date_key": dk,
+        "chicks_qty": int(entry.get("chicks_qty", 0)),
+        "chicks_cost": entry.get("chicks_cost", 0.0),
+        "feed_cost": entry.get("feed_cost", 0.0),
+        "med_cost": entry.get("med_cost", 0.0),
+        "other_cost": entry.get("other_cost", 0.0),
+        "mortality": int(entry.get("mortality", 0)),
+        "has_inputs": 1 if entry.get("has_inputs") else 0,
+        "has_sales": 1 if entry.get("has_sales") else 0,
+    }
+    if use_supabase:
+        sb.table("farm_dates").upsert(data, on_conflict="user_id,date_key").execute()
+        return
+    conn = get_db()
+    conn.execute("""
+        INSERT INTO farm_dates (user_id, date_key, chicks_qty, chicks_cost, feed_cost, med_cost, other_cost, mortality, has_inputs, has_sales)
+        VALUES (?,?,?,?,?,?,?,?,?,?)
+        ON CONFLICT(user_id, date_key) DO UPDATE SET
+            chicks_qty=excluded.chicks_qty, chicks_cost=excluded.chicks_cost,
+            feed_cost=excluded.feed_cost, med_cost=excluded.med_cost,
+            other_cost=excluded.other_cost, mortality=excluded.mortality,
+            has_inputs=excluded.has_inputs, has_sales=excluded.has_sales
+    """, (user_id, dk, data["chicks_qty"], data["chicks_cost"], data["feed_cost"],
+          data["med_cost"], data["other_cost"], data["mortality"],
+          data["has_inputs"], data["has_sales"]))
+    conn.commit()
+    conn.close()
+
+def db_delete_sales_records(user_id, dk):
+    if use_supabase:
+        sb.table("sales_records").delete().eq("user_id", user_id).eq("date_key", dk).execute()
+        return
+    conn = get_db()
+    conn.execute("DELETE FROM sales_records WHERE user_id = ? AND date_key = ?", (user_id, dk))
+    conn.commit()
+    conn.close()
+
+def db_insert_sale_record(user_id, dk, rec):
+    data = {"user_id": user_id, "date_key": dk, "customer": rec["customer"],
+            "qty": int(rec["qty"]), "price": rec["price"], "revenue": rec["revenue"]}
+    if use_supabase:
+        sb.table("sales_records").insert(data).execute()
+        return
+    conn = get_db()
+    conn.execute("INSERT INTO sales_records (user_id, date_key, customer, qty, price, revenue) VALUES (?,?,?,?,?,?)",
+                 (user_id, dk, rec["customer"], rec["qty"], rec["price"], rec["revenue"]))
+    conn.commit()
+    conn.close()
+
+def init_db():
+    conn = get_db()
+    conn.executescript("""
+        CREATE TABLE IF NOT EXISTS users (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            username TEXT UNIQUE NOT NULL,
+            password TEXT NOT NULL,
+            is_activated INTEGER DEFAULT 0,
+            subscription_start TEXT,
+            subscription_end TEXT
+        );
+        CREATE TABLE IF NOT EXISTS farm_dates (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            date_key TEXT NOT NULL,
+            chicks_qty INTEGER DEFAULT 0,
+            chicks_cost REAL DEFAULT 0.0,
+            feed_cost REAL DEFAULT 0.0,
+            med_cost REAL DEFAULT 0.0,
+            other_cost REAL DEFAULT 0.0,
+            mortality INTEGER DEFAULT 0,
+            has_inputs INTEGER DEFAULT 0,
+            has_sales INTEGER DEFAULT 0,
+            UNIQUE(user_id, date_key)
+        );
+        CREATE TABLE IF NOT EXISTS sales_records (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            date_key TEXT NOT NULL,
+            customer TEXT NOT NULL,
+            qty INTEGER NOT NULL,
+            price REAL NOT NULL,
+            revenue REAL NOT NULL
+        );
+    """)
+    cols = [row[1] for row in conn.execute("PRAGMA table_info(users)").fetchall()]
+    if "subscription_start" not in cols:
+        conn.execute("ALTER TABLE users ADD COLUMN subscription_start TEXT")
+    if "subscription_end" not in cols:
+        conn.execute("ALTER TABLE users ADD COLUMN subscription_end TEXT")
+    conn.commit()
+    conn.close()
+
+def check_subscription_expiry(user_id):
+    user = db_get_user_by_id(user_id)
+    if not user:
+        return False
+    is_activated = bool(user.get("is_activated", 0))
+    subscription_end = user.get("subscription_end")
+    if not is_activated:
+        return False
+    if subscription_end:
+        try:
+            expiry_date = datetime.strptime(subscription_end, "%Y-%m-%d %H:%M:%S")
+            now = datetime.now()
+            if now > expiry_date:
+                db_update_user(user_id, {"is_activated": 0})
+                return False
+        except:
+            pass
+    return True
+
+def activate_subscription(user_id, days=30):
+    now = datetime.now()
+    expiry = now + timedelta(days=days)
+    db_update_user(user_id, {
+        "is_activated": 1,
+        "subscription_start": now.strftime("%Y-%m-%d %H:%M:%S"),
+        "subscription_end": expiry.strftime("%Y-%m-%d %H:%M:%S")
+    })
+    return expiry
+
+def load_data():
+    if "current_user_id" not in st.session_state:
+        return
+    uid = st.session_state.current_user_id
+    if uid is None:
+        return
+    frows = db_get_farm_dates(uid)
+    farm = {}
+    for r in frows:
+        dk = r["date_key"]
+        farm[dk] = {
+            "chicks_qty": r["chicks_qty"], "chicks_cost": r["chicks_cost"],
+            "feed_cost": r["feed_cost"], "med_cost": r["med_cost"],
+            "other_cost": r["other_cost"], "mortality": r["mortality"],
+            "has_inputs": bool(r["has_inputs"]), "has_sales": bool(r["has_sales"]),
+            "sales_records": []
+        }
+    srows = db_get_sales_records(uid)
+    for s in srows:
+        dk = s["date_key"]
+        if dk in farm:
+            farm[dk]["sales_records"].append({
+                "customer": s["customer"], "qty": s["qty"],
+                "price": s["price"], "revenue": s["revenue"]
+            })
+    st.session_state.farm_database = farm
+
+def save_data():
+    if "current_user_id" not in st.session_state or st.session_state.current_user_id is None:
+        return
+    uid = st.session_state.current_user_id
+    for dk, entry in st.session_state.farm_database.items():
+        db_upsert_farm_date(uid, dk, entry)
+        db_delete_sales_records(uid, dk)
+        for rec in entry.get("sales_records", []):
+            db_insert_sale_record(uid, dk, rec)
+
+
+
+# --- Page Configuration ---
+st.set_page_config(
+    page_title="Mfugaji Kwanza - Broiler Manager",
+    page_icon="&#x1f414;",
+    layout="wide",
+    initial_sidebar_state="collapsed"
+)
+
+# --- Initialize Session States ---
+if "logged_in" not in st.session_state:
+    st.session_state.logged_in = False
+if "is_activated" not in st.session_state:
+    st.session_state.is_activated = False
+if "language" not in st.session_state:
+    st.session_state.language = "Swahili"
+if "sub_view" not in st.session_state:
+    st.session_state.sub_view = "dashboard"
+if "auth_screen" not in st.session_state:
+    st.session_state.auth_screen = "login"  
+if "profit_calculated" not in st.session_state:
+    st.session_state.profit_calculated = False
+if "edit_dev_date" not in st.session_state:
+    st.session_state.edit_dev_date = None
+if "edit_sale_key" not in st.session_state:
+    st.session_state.edit_sale_key = None
+if "current_user_id" not in st.session_state:
+    st.session_state.current_user_id = None
+if "current_username" not in st.session_state:
+    st.session_state.current_username = None
+if "farm_database" not in st.session_state:
+    st.session_state.farm_database = {}
+
+init_db()
+
+# ==========================================
+# MFUMO WA KIOTOMATIKI WA USOMAJI WA MALIPO KUTOKA SELAR
+# ==========================================
+query_params = st.query_params
+if "status" in query_params and "token" in query_params:
+    if query_params["status"] == "success" and query_params["token"] == "Erasto_HEIS5_Boss_2026":
+        if st.session_state.current_user_id:
+            expiry = activate_subscription(st.session_state.current_user_id, days=30)
+            st.session_state.is_activated = True
+            st.query_params.clear()
+
+def init_date_entry(target_date_str):
+    if target_date_str not in st.session_state.farm_database:
+        st.session_state.farm_database[target_date_str] = {
+            "chicks_qty": 0,       # Idadi ya vifaranga/kuku walioingizwa bandani
+            "chicks_cost": 0.0, 
+            "feed_cost": 0.0, 
+            "med_cost": 0.0, 
+            "other_cost": 0.0,
+            "mortality": 0, 
+            "sales_records": [],   # Orodha ya mauzo ya wateja: [{"customer": "Name", "qty": X, "price": Y, "revenue": Z}]
+            "has_inputs": False, 
+            "has_sales": False
+        }
+
+broiler_bg_url = "https://images.unsplash.com/photo-1548550023-2bdb3c5beed7?q=80&w=1600&auto=format&fit=crop"
+
+# --- Kamusi ya Lugha ---
+translations = {
+    "English": {
+        "title": "MFUGAJI KWANZA", "subtitle": "Modern Poultry Management System",
+        "login_header": "&#x1f512; Account Login", "signup_header": "&#x1f4dd; Create New Account",
+        "username": "Username", "password": "Password", "full_name": "Full Name",
+        "login_btn": "Sign In Securely &#x1f680;", "signup_btn": "Register & Proceed to Payment &#x1f4dd;",
+        "go_to_signup": "Don't have an account? Sign Up here", "go_to_login": "Already have an account? Log In here",
+        "error_msg": "&#x274c; Invalid Username or Password.", "error_fields": "&#x274c; All fields are required.",
+        "success_msg": "&#x1f389; Account Created! Please process activation payment...", "login_success": "&#x1f389; Login Successful!",
+        "welcome": "Broiler Batch Manager", "instruction": "Select an option below to manage development or sales.",
+        "choice_inputs": "&#x1f6d2; Development & Expenditure", "choice_withdraw": "&#x1f4b0; Broiler Sales (Customers)",
+        "desc_inputs": "Record expenses for chicks, feeds, medications, and batch entry.", "desc_withdraw": "Record customer names, chickens bought, and sales revenue.",
+        "back_btn": "&#x2190; Back to Dashboard", "input_header": "&#x1f423; Development & Expenditure",
+        "sales_header": "&#x1f4b0; Broiler Sales", 
+        "label_chicks_qty": "Number of Chicks Introduced Today",
+        "label_chicks": "Total Cost of Chicks (TSH)",
+        "label_feed": "Total Cost of Feeds (TSH)", "label_med": "Total Cost of Medicine (TSH)",
+        "label_other": "Total Cost of Other Expenses (TSH)", "label_mortality": "Mortality Count",
+        "label_date": "Select Date:", "finish_inputs_btn": "&#x1f3c1; Save Expenses & Batch Details",
+        "finish_sales_btn": "&#x1f3c1; Save & Record Customer Purchase", "label_qty": "Number of Chickens Bought",
+        "label_customer": "Customer Name", "label_price": "Price per Chicken (TSH)",
+        "summary_header": "&#x1f4ca; Financial Summary",
+        "total_expenses": "Total Expenses:", "total_revenue": "Total Revenue:",
+        "calc_profit_btn": "&#x1f4c8; Calculate Net Profit", "profit_msg": "&#x1f389; Net Profit:", "loss_msg": "&#x26a0;&#xfe0f; Net Loss:",
+        "no_records": "&#x274c; No records found.",
+        "kumbu_dev_title": "&#x1f423; Development Records",
+        "kumbu_dev_desc": "View and edit development & expense records",
+        "kumbu_sale_title": "&#x1f4b0; Sales Records",
+        "kumbu_sale_desc": "View and edit customer sales records",
+        "open_kumbu_dev": "&#x1f423; Open Records",
+        "open_kumbu_sale": "&#x1f4b0; Open Records",
+        "back_dashboard": "&#x2190; Back to Dashboard",
+        "edit_btn": "&#x270f;&#xfe0f; Edit",
+        "no_dev_records": "No development records yet.",
+        "no_dev_hint": "Go to dashboard and click 'Development & Expenditure' to start recording.",
+        "no_sale_records": "No sales records yet.",
+        "no_sale_hint": "Go to dashboard and click 'Broiler Sales' to start recording.",
+        "total_chicks": "Total Chicks Entered",
+        "deaths": "Deaths",
+        "remaining": "Remaining",
+        "chicks_summary": "&#x1f425; Total Chicks: {}  |  &#x274c; Deaths: {}  |  &#x2705; Remaining: {}",
+        "profit_chicks": "&#x1f425; Total Chicks: {} Entered  |  &#x274c; Deaths: {}  |  &#x2705; Remaining: {}",
+        "edit_record_title": "&#x270f;&#xfe0f; Edit Record: {}",
+        "edit_sale_title": "&#x270f;&#xfe0f; Edit Sale: {}",
+        "save_btn": "&#x1f4be; Save",
+        "cancel_btn": "&#x274c; Cancel",
+        "save_success": "Updated successfully!",
+        "save_success_sale": "Sale for",
+        "record_header": "&#x1f4cb; Farm Records",
+        "empty_name": "&#x274c; Please enter customer name!",
+        "chicks_input_label": "Number of Chicks",
+        "chicks_cost_label": "Chicks Cost (TSH)",
+        "feed_cost_label": "Feed Cost (TSH)",
+        "med_cost_label": "Medicine Cost (TSH)",
+        "other_cost_label": "Other Costs (TSH)",
+        "mortality_label": "Mortality Count",
+        "day_qty_badge": "{} Chickens",
+        "day_sales_total": "&#x1f4e6; Total Revenue: {:,.0f} TSH",
+        "record_back": "&#x2190; Back to Dashboard",
+        "logout": "Logout (Ondoka)",
+        "customer_placeholder": "E.g. Juma, Mama Maria, etc.",
+        "chickens": "Chickens",
+        "choose_language": "&#x1f310; Choose Language",
+        "pass_placeholder": "Enter your password",
+        "selar_howto": "1. Click \"BOFYA HAPA KUFANYA MALIPO\"\n2. On Selar, click \"Continue to Payment\"\n3. Choose: Tigo Pesa / Airtel / Halo / Card\n4. Enter phone -> click \"Pay Now\"\n5. Confirm with PIN on your phone\n6. You'll be redirected back automatically\n7. Account activates automatically",
+    },
+    "Swahili": {
+        "title": "MFUGAJI KWANZA", "subtitle": "Mfumo wa Kisasa wa Usimamizi wa Kuku",
+        "login_header": "&#x1f512; Ingia Kwenye Akaunti", "signup_header": "&#x1f4dd; Fungua Akaunti Mpya",
+        "username": "Jina la Mtumiaji", "password": "Neno la Siri (Password)", "full_name": "Jina Lako Kamili",
+        "login_btn": "Ingia Sasa &#x1f680;", "signup_btn": "Sajili na Uendelee kwenye Malipo &#x1f4dd;",
+        "go_to_signup": "Hauna akaunti bado? Jisajili hapa", "go_to_login": "Umeshajisajili? Ingia hapa",
+        "error_msg": "&#x274c; Jina au neno la siri sio sahihi.", "error_fields": "&#x274c; Sehemu zote zinatakiwa kujazwa.",
+        "success_msg": "&#x1f389; Akaunti imefunguliwa! Tafadhali kamilisha malipo...", "login_success": "&#x1f389; Umefanikiwa kuingia!",
+        "welcome": "Usimamizi wa Kuku wa Nyama (Broiler)", "instruction": "Chagua hatua hapa chini kusajili gharama au mauzo.",
+        "choice_inputs": "&#x1f6d2; Maendeleo na Gharama za Vifaranga", "choice_withdraw": "&#x1f4b0; Mauzo ya Kuku (Wateja)",
+        "desc_inputs": "Sajili gharama, idadi ya vifaranga walioingia, chakula na vifo.", "desc_withdraw": "Sajili majina ya wateja, idadi ya kuku walionunua na pesa waliyolipa.",
+        "back_btn": "&#x2190; Rudi Kwenye Dashibodi", "input_header": "&#x1f423; Maendeleo na Gharama za Vifaranga",
+        "sales_header": "&#x1f4b0; Mauzo ya Kuku (Broiler Sales)", 
+        "label_chicks_qty": "Idadi ya Vifaranga Walioingia Siku Hii",
+        "label_chicks": "Gharama ya Kununua Vifaranga (TSH)",
+        "label_feed": "Gharama ya Chakula (TSH)", "label_med": "Gharama ya Chanjo na Dawa (TSH)",
+        "label_other": "Gharama Nyinginezo (TSH)", "label_mortality": "Idadi ya Waliokufa (Vifo vya Leo)",
+        "label_date": "Chagua Tarehe:", "finish_inputs_btn": "&#x1f3c1; Hifadhi Matumizi na Data za Vifaranga",
+        "finish_sales_btn": "&#x1f3c1; Hifadhi Mauzo ya Mteja Huyu", "label_qty": "Idadi ya Kuku Alionunua Mteja",
+        "label_customer": "Jina la Mteja", "label_price": "Bei kwa Kila Kuku (TSH)",
+        "summary_header": "&#x1f4ca; Muhtasari wa Mapato na Faida",
+        "total_expenses": "Jumla ya Matumizi:", "total_revenue": "Jumla ya Mapato:",
+        "calc_profit_btn": "&#x1f4c8; Piga Hesabu ya Net Profit", "profit_msg": "&#x1f389; Shamba limeingiza FAIDA ya", "loss_msg": "&#x26a0;&#xfe0f; Shamba limeingiza HASARA ya",
+        "no_records": "&#x274c; Hakuna kumbukumbu tarehe hii.",
+        "kumbu_dev_title": "&#x1f423; Kumbukumbu ya Maendeleo",
+        "kumbu_dev_desc": "Angalia na hariri rekodi za maendeleo na gharama",
+        "kumbu_sale_title": "&#x1f4b0; Kumbukumbu ya Mauzo",
+        "kumbu_sale_desc": "Angalia na hariri rekodi za mauzo na wateja",
+        "open_kumbu_dev": "&#x1f423; Fungua Kumbukumbu",
+        "open_kumbu_sale": "&#x1f4b0; Fungua Kumbukumbu",
+        "back_dashboard": "&#x2190; Rudi Kwenye Dashibodi",
+        "edit_btn": "&#x270f;&#xfe0f; Badilisha",
+        "no_dev_records": "Hakuna kumbukumbu za maendeleo bado.",
+        "no_dev_hint": "Rudi kwenye dashibodi na bonyeza 'Maendeleo na Gharama' kuanza kurekodi.",
+        "no_sale_records": "Hakuna kumbukumbu za mauzo bado.",
+        "no_sale_hint": "Rudi kwenye dashibodi na bonyeza 'Mauzo ya Kuku' kuanza kurekodi.",
+        "total_chicks": "Jumla Vifaranga",
+        "deaths": "Vifo",
+        "remaining": "Waliopo",
+        "chicks_summary": "&#x1f425; Jumla Vifaranga: {}  |  &#x274c; Vifo: {}  |  &#x2705; Waliopo: {}",
+        "profit_chicks": "&#x1f425; Jumla ya Vifaranga Walioingia: {}  |  &#x274c; Vifo: {}  |  &#x2705; Vifaranga Waliopo: {}",
+        "edit_record_title": "&#x270f;&#xfe0f; Hariri Kumbukumbu: {}",
+        "edit_sale_title": "&#x270f;&#xfe0f; Hariri Mauzo: {}",
+        "save_btn": "&#x1f4be; Hifadhi",
+        "cancel_btn": "&#x274c; Ghairi",
+        "save_success": "Imerekebishwa!",
+        "save_success_sale": "Mauzo ya",
+        "record_header": "&#x1f4cb; Kumbukumbu za Shamba",
+        "empty_name": "&#x274c; Tafadhali ingiza Jina la Mteja!",
+        "chicks_input_label": "Idadi ya Vifaranga",
+        "chicks_cost_label": "Gharama ya Vifaranga (TSH)",
+        "feed_cost_label": "Gharama ya Chakula (TSH)",
+        "med_cost_label": "Gharama ya Dawa (TSH)",
+        "other_cost_label": "Nyinginezo (TSH)",
+        "mortality_label": "Idadi ya Vifo",
+        "day_qty_badge": "{} Kuku",
+        "day_sales_total": "&#x1f4e6; Jumla ya Mapato: {:,.0f} TSH",
+        "record_back": "&#x2190; Rudi Kwenye Dashibodi",
+        "logout": "Logout (Ondoka)",
+        "customer_placeholder": "Mfano: Juma, Mama Maria, n.k.",
+        "chickens": "Kuku",
+        "choose_language": "&#x1f310; Chagua Lugha",
+        "pass_placeholder": "Weka neno la siri hapa",
+        "selar_howto": "1. Bonyeza \"BOFYA HAPA KUFANYA MALIPO\"\n2. Kwenye Selar, bonyeza \"Continue to Payment\"\n3. Chagua: Tigo Pesa / Airtel / Halo / Card\n4. Weka namba -> bonyeza \"Pay Now\"\n5. Thibitisha kwa PIN simu yako\n6. Utarudishwa kwenye app moja kwa moja\n7. Akaunti itafunguka kiotomatiki",
+    }
+}
+
+lang = st.session_state.language
+t = translations[lang]
+
+# --- CSS Styling ---
+st.markdown(f"""
+    <style>
+    .stApp {{ background-image: url("{broiler_bg_url}"); background-size: cover; background-position: center; background-repeat: no-repeat; background-attachment: fixed; }}
+    .stApp::before {{ content: ""; position: absolute; top: 0; left: 0; width: 100%; height: 100%; background-color: rgba(0, 0, 0, 0.78); z-index: 0; }}
+    [data-testid="stHeader"] {{ background-color: transparent !important; z-index: 10; }}
+    .main .block-container {{ z-index: 1; padding-top: 1.2rem !important; }}
+    .brand-title {{ color: #FFFFFF; font-family: 'Arial Black', sans-serif; font-weight: 900; font-size: 36px; text-shadow: 3px 3px 6px rgba(0,0,0,0.8); text-align: center; letter-spacing:2px; }}
+    .brand-subtitle {{ font-size: 13px; color: #00E676; display: block; margin-top: -5px; font-weight: 600; letter-spacing:1px; }}
+    
+    /* Auth & Dashboard Cards */
+    .auth-card, [data-testid="stForm"], .stForm {{ background: linear-gradient(145deg,#1a1a2e,#16213e) !important; border: 1px solid #2a2a4a !important; border-radius: 20px !important; padding: 32px !important; box-shadow: 0 8px 32px rgba(0,0,0,0.4) !important; }}
+    .dashboard-card {{ background: linear-gradient(145deg,#1a1a2e,#16213e) !important; border: 1px solid #2a2a4a !important; border-radius: 20px !important; padding: 28px !important; text-align: center; box-shadow: 0 8px 32px rgba(0,0,0,0.4); transition: transform 0.2s; }}
+    
+    label[data-testid="stWidgetLabel"] p {{ color: #DDD !important; font-weight: 600 !important; font-size: 14px !important; }}
+    input, input[type="text"], input[type="password"] {{ background-color: #0a0a1a !important; color: #FFF !important; border: 1px solid #3a3a5a !important; border-radius: 12px !important; padding: 12px 16px !important; font-weight: 500 !important; font-size: 15px !important; }}
+    input:focus {{ border-color: #00E676 !important; box-shadow: 0 0 0 2px rgba(0,230,118,0.15) !important; }}
+    ::placeholder {{ color: #666 !important; font-size: 13px !important; }}
+    
+    div.stButton > button {{ background: linear-gradient(135deg,#00E676,#00c853) !important; color: #000 !important; border-radius: 14px !important; border: none !important; padding: 14px 24px !important; font-weight: 800 !important; font-size: 16px !important; width: 100%; transition: all 0.2s; box-shadow: 0 4px 15px rgba(0,230,118,0.3) !important; }}
+    div.stButton > button:hover {{ transform: translateY(-2px) !important; box-shadow: 0 6px 20px rgba(0,230,118,0.5) !important; }}
+    
+    .auth-switch {{ color: #888; text-align: center; margin-top: 16px; font-size: 14px; }}
+    .auth-switch a {{ color: #00E676; text-decoration: none; font-weight: 600; cursor: pointer; }}
+    .auth-switch a:hover {{ color: #00FF5E; text-decoration: underline; }}
+    [data-testid="stFormSubmitInstruction"] {{ font-size: 8px !important; opacity: 0.3 !important; }}
+    </style>
+    """, unsafe_allow_html=True)
+
+# --- Top Header ---
+col_title, col_lang = st.columns([4, 1.3])
+with col_title:
+    st.markdown(f'<div class="brand-title">MFUGAJI KWANZA <span class="brand-subtitle">{t["subtitle"]}</span></div>', unsafe_allow_html=True)
+with col_lang:
+    st.markdown(f'<div style="text-align:right; margin-bottom:2px;"><span style="color:#AAA; font-size:11px; font-weight:600;">{t["choose_language"]}</span></div>', unsafe_allow_html=True)
+    lang_sw = st.session_state.language == "Swahili"
+    st.markdown("""<style>button[kind="primary"],button[kind="secondary"]{padding:2px 6px!important;font-size:11px!important;border-radius:4px!important;min-height:0!important;line-height:1!important;}</style>""", unsafe_allow_html=True)
+    col_a, col_b = st.columns(2)
+    with col_a:
+        if st.button("&#x1f1f9;&#x1f1ff; Sw", key="lang_sw", use_container_width=True, type="primary" if lang_sw else "secondary"):
+            if st.session_state.language != "Swahili":
+                st.session_state.language = "Swahili"
+                st.rerun()
+    with col_b:
+        if st.button("&#x1f1ec;&#x1f1e7; En", key="lang_en", use_container_width=True, type="primary" if not lang_sw else "secondary"):
+            if st.session_state.language != "English":
+                st.session_state.language = "English"
+                st.rerun()
+
+# ==========================================
+# SEHEMU YA 1: AUTHENTICATION FLOW
+# ==========================================
+if not st.session_state.logged_in:
+    _, center_auth, _ = st.columns([1, 1.8, 1])
+    with center_auth:
+        if st.session_state.auth_screen == "login":
+            st.markdown("""<div class="auth-card">""", unsafe_allow_html=True)
+            with st.form(key="login_secure_form"):
+                st.markdown(f"""<div style="text-align:center; margin-bottom:20px;">
+                    <span style="font-size:48px;">&#x1f512;</span>
+                    <h3 style="color:#00E676; margin:8px 0 2px 0; font-size:24px; font-weight:800;">{t["login_header"]}</h3>
+                </div>""", unsafe_allow_html=True)
+                user_input = st.text_input("&#x1f464; " + t["username"], placeholder="Mfano: juma, mama_maria")
+                pass_input = st.text_input("&#x1f511; " + t["password"], type="password", placeholder=t["pass_placeholder"])
+                if st.form_submit_button("&#x1f680; " + t["login_btn"]):
+                    username_clean = user_input.strip()
+                    user = db_get_user_by_username(username_clean)
+                    if user and user.get("password") == pass_input:
+                        user_id = user["id"]
+                        subscription_active = check_subscription_expiry(user_id)
+                        
+                        st.session_state.current_user_id = user_id
+                        st.session_state.current_username = username_clean
+                        st.session_state.logged_in = True
+                        st.session_state.is_activated = subscription_active
+                        load_data()
+                        
+                        if subscription_active:
+                            st.success(t["login_success"])
+                        else:
+                            st.warning("&#x23f0; Muda wa malipo umekwisha! Tafadhali lipia tena. / Subscription expired! Please pay again.")
+                        time.sleep(1.0)
+                        st.rerun()
+                    else:
+                        st.error(t["error_msg"])
+            st.markdown("</div>", unsafe_allow_html=True)
+            if st.button("&#x1f4dd; "+t["go_to_signup"], key="go_to_signup_btn", use_container_width=True):
+                st.session_state.auth_screen = "signup"
+                st.rerun()
+
+        elif st.session_state.auth_screen == "signup":
+            st.markdown("""<div class="auth-card">""", unsafe_allow_html=True)
+            with st.form(key="signup_secure_form"):
+                st.markdown(f"""<div style="text-align:center; margin-bottom:20px;">
+                    <span style="font-size:48px;">&#x1f4dd;</span>
+                    <h3 style="color:#00E676; margin:8px 0 2px 0; font-size:24px; font-weight:800;">{t["signup_header"]}</h3>
+                </div>""", unsafe_allow_html=True)
+                reg_name = st.text_input("&#x1f464; " + t["full_name"], placeholder="Mfano: Juma Mohamedi")
+                reg_user = st.text_input("&#x1f465; " + t["username"], placeholder="Mfano: juma_2026")
+                reg_pass = st.text_input("&#x1f511; " + t["password"], type="password", placeholder=t["pass_placeholder"])
+                if st.form_submit_button("&#x2705; " + t["signup_btn"]):
+                    username_clean = reg_user.strip()
+                    if reg_name and username_clean and reg_pass:
+                        try:
+                            existing = db_get_user_by_username(username_clean)
+                            if existing:
+                                st.error("&#x274c; Jina la mtumiaji tayari lipo / Username already exists.")
+                            else:
+                                user_id = db_insert_user(username_clean, reg_pass, 0)
+                                st.session_state.current_user_id = user_id
+                                st.session_state.current_username = username_clean
+                                st.session_state.logged_in = True
+                                st.session_state.is_activated = False
+                                load_data()
+                                st.success(t["success_msg"])
+                                time.sleep(1.5)
+                                st.rerun()
+                        except Exception as e:
+                            st.error("&#x274c; Jina la mtumiaji tayari lipo / Username already exists.")
+                    else:
+                        st.error(t["error_fields"])
+            st.markdown("</div>", unsafe_allow_html=True)
+            if st.button("&#x1f511; "+t["go_to_login"], key="go_to_login_btn", use_container_width=True):
+                st.session_state.auth_screen = "login"
+                st.rerun()
+
+# ==========================================
+# SEHEMU YA 2: BANGO LA MALIPO KUPITIA SELAR
+# ==========================================
+elif st.session_state.logged_in and not st.session_state.is_activated:
+    st.markdown("""
+    <div style="text-align:center; margin: 10px 0 20px 0;">
+        <span style="font-size:36px;">&#x1f414;</span>
+        <h2 style="color:#FFF; margin:4px 0 0 0; font-weight:800; font-size:28px;">Mfugaji Kwanza</h2>
+        <p style="color:#888; font-size:14px; margin:0;">Broiler Manager</p>
+    </div>
+    """, unsafe_allow_html=True)
+
+    col_plan, col_pay = st.columns([1.2, 1.8])
+
+    with col_plan:
+        st.markdown("""
+        <div style="background:linear-gradient(135deg,#0d1b2a,#1b2838); border-radius:16px; padding:24px; border:1px solid #1e3a5f; box-shadow:0 4px 24px rgba(0,0,0,0.3); height:100%;">
+            <div style="font-size:40px; text-align:center; margin-bottom:4px;">&#x1f4cb;</div>
+            <h3 style="color:#38bdf8; text-align:center; font-weight:800; font-size:20px; margin:4px 0 12px 0;">Monthly Pass</h3>
+            <div style="text-align:center; margin-bottom:16px;">
+                <span style="font-size:36px; font-weight:900; color:#FFD700;">TSH 10,000</span>
+                <span style="color:#888; font-size:14px; display:block;">/ mwezi mmoja</span>
+            </div>
+            <div style="border-top:1px solid #1e3a5f; padding-top:12px;">
+                <p style="color:#CCC; font-size:13px; margin:6px 0;">&#x2705; Udhibiti wa kuku wote</p>
+                <p style="color:#CCC; font-size:13px; margin:6px 0;">&#x2705; Kumbukumbu za maendeleo</p>
+                <p style="color:#CCC; font-size:13px; margin:6px 0;">&#x2705; Kumbukumbu za mauzo</p>
+                <p style="color:#CCC; font-size:13px; margin:6px 0;">&#x2705; Faida na hasara kwa wakati halisi</p>
+                <p style="color:#CCC; font-size:13px; margin:6px 0;">&#x2705; Msaada wa lugha mbili (Sw/En)</p>
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
+
+    with col_pay:
+        st.markdown(f"""
+        <div style="background:linear-gradient(135deg,#0a1628,#111827); border-radius:16px; padding:24px; border:1px solid #1e3a5f; box-shadow:0 4px 24px rgba(0,0,0,0.3); height:100%;">
+            <h3 style="color:#FFF; text-align:center; font-weight:700; font-size:18px; margin:0 0 16px 0;">&#x1f513; {t['success_msg'].split('!')[0] if '!' in t['success_msg'] else t['success_msg']}</h3>
+        </div>
+        """, unsafe_allow_html=True)
+
+        # Hatua ya 1: Glowing pay button
+        st.markdown("""
+        <style>
+        @keyframes glowPulse {
+            0% { box-shadow: 0 0 8px #FFD700, 0 0 16px #FFD700, 0 0 24px #FFD700; }
+            50% { box-shadow: 0 0 16px #FFD700, 0 0 32px #FFD700, 0 0 48px #FFD700; }
+            100% { box-shadow: 0 0 8px #FFD700, 0 0 16px #FFD700, 0 0 24px #FFD700; }
+        }
+        div.stLinkButton a {
+            background:linear-gradient(135deg, #FFD700, #FFA500) !important;
+            color:#000 !important; font-size:26px !important; font-weight:900 !important;
+            border:none !important; border-radius:16px !important; padding:22px 16px !important;
+            animation:glowPulse 2s ease-in-out infinite !important;
+            text-shadow:0 1px 2px rgba(255,255,255,0.3) !important;
+            letter-spacing:1px !important;
+            transition:transform 0.2s !important;
+            text-decoration:none !important;
+        }
+        div.stLinkButton a:hover { transform:scale(1.02) !important; }
+        div.stLinkButton a:active { transform:scale(0.98) !important; }
+        div.stLinkButton a p { font-size:26px !important; font-weight:900 !important; }
+        </style>
+        """, unsafe_allow_html=True)
+        st.link_button("&#x1f4a5; BOFYA HAPA KUFANYA MALIPO", url="https://selar.co/9o12h598n9", use_container_width=True)
+
+        st.markdown(f"""
+        <div style="margin:16px 0; padding:14px; background:#0a0a1a; border-radius:12px; border:1px solid #2a2a1a;">
+            <p style="color:#FFD700; font-size:14px; font-weight:700; margin:0 0 8px 0;">&#x1f4d6; Mwongozo / Guide:</p>
+            <p style="color:#DDD; font-size:13px; line-height:1.8; margin:0; white-space:pre-line;">{t['selar_howto']}</p>
+        </div>
+        """, unsafe_allow_html=True)
+
+        st.markdown("""
+        <div style="display:flex; align-items:center; gap:10px; margin:20px 0 12px 0;">
+            <span style="background:#FFD700; color:#000; border-radius:50%; width:24px; height:24px; display:inline-flex; align-items:center; justify-content:center; font-weight:800; font-size:13px; flex-shrink:0;">2</span>
+            <span style="color:#CCC; font-size:14px; font-weight:600;">Maliza malipo kule Selar / Complete payment on Selar</span>
+        </div>
+        <div style="margin-left:34px; margin-bottom:16px;">
+            <span style="background:#0a1a0a; border:1px solid #1a3a1a; border-radius:8px; padding:6px 12px; font-size:12px; color:#00E676; display:inline-block;">Tigo Pesa</span>
+            <span style="background:#0a0a1a; border:1px solid #1a1a3a; border-radius:8px; padding:6px 12px; font-size:12px; color:#888; display:inline-block; margin-left:6px;">Airtel Money</span>
+            <span style="background:#1a0a0a; border:1px solid #3a1a1a; border-radius:8px; padding:6px 12px; font-size:12px; color:#F88; display:inline-block; margin-left:6px;">Halopesa</span>
+            <span style="background:#0a0a1a; border:1px solid #1a1a3a; border-radius:8px; padding:6px 12px; font-size:12px; color:#888; display:inline-block; margin-left:6px;">&#x1f4b3; Card</span>
+        </div>
+        """, unsafe_allow_html=True)
+
+        st.markdown("""
+        <div style="display:flex; align-items:center; gap:10px; margin-bottom:16px;">
+            <span style="background:#00E676; color:#000; border-radius:50%; width:24px; height:24px; display:inline-flex; align-items:center; justify-content:center; font-weight:800; font-size:13px; flex-shrink:0;">3</span>
+            <span style="color:#CCC; font-size:14px; font-weight:600;">Subiri uelekezwe kwenye app / Wait to be redirected back</span>
+        </div>
+        """, unsafe_allow_html=True)
+        st.markdown(f"""
+        <div style="background:linear-gradient(135deg,#0a1a0a,#102810); border-radius:12px; padding:16px; border:1px solid #1a3a1a; margin-bottom:16px;">
+            <p style="color:#00E676; font-size:13px; font-weight:700; margin:0 0 6px 0;">&#x2705; Baada ya malipo kukamilika / After payment completes:</p>
+            <p style="color:#CCC; font-size:12px; margin:2px 0;">
+            Selar itakuelekeza tena kwenye app hii moja kwa moja na akaunti yako itafunguliwa kiotomatiki.
+            <br>Selar will redirect you back to this app automatically and your account will be activated immediately.
+            </p>
+            <p style="color:#FFD700; font-size:12px; margin:8px 0 0 0;">
+            &#x26a0;&#xfe0f; Ikiwa huelekezwi, bonyeza kitufe cha dhahabu juu tena na kamilisha malipo.
+            <br>If not redirected, click the gold button above again to complete payment.
+            </p>
+        </div>
+        """, unsafe_allow_html=True)
+
+# ==========================================
+# SEHEMU YA 3: DASHBOARD & TRANSACTIONS
+# ==========================================
+else:
+    if st.session_state.current_user_id:
+        subscription_active = check_subscription_expiry(st.session_state.current_user_id)
+        if not subscription_active:
+            st.session_state.is_activated = False
+            st.warning("&#x23f0; Muda wa malipo umekwisha! Tafadhali lipia tena. / Subscription expired! Please pay again.")
+            time.sleep(1)
+            st.rerun()
+    
+    if st.query_params:
+        st.query_params.clear()
+    
+    user_sub = db_get_user_by_id(st.session_state.current_user_id)
+    
+    subscription_end_text = ""
+    if user_sub and user_sub.get("subscription_end"):
+        try:
+            expiry_date = datetime.strptime(user_sub["subscription_end"], "%Y-%m-%d %H:%M:%S")
+            now = datetime.now()
+            days_remaining = (expiry_date - now).days
+            if days_remaining > 0:
+                subscription_end_text = f"&#128337; Malipo yanaisha kwa siku {days_remaining} / Subscription expires in {days_remaining} days"
+            elif days_remaining == 0:
+                subscription_end_text = "&#9888; Malipo yanaisha leo! / Subscription expires today!"
+        except:
+            pass
+    
+    if subscription_end_text:
+        st.markdown(f"""
+        <div style="background:linear-gradient(135deg,#1a1a0a,#2a2a1a); border-radius:12px; padding:12px; margin-bottom:16px; border-left:5px solid #FFD700;">
+            <p style="color:#FFD700; margin:0; font-size:14px; font-weight:700;">{subscription_end_text}</p>
+        </div>
+        """, unsafe_allow_html=True)
+        
+    # Hesabu Jumla ya Maisha ya Shamba (Lifetime Summary)
+    lifetime_costs = 0.0
+    lifetime_revenue = 0.0
+    for date_key in st.session_state.farm_database:
+        entry = st.session_state.farm_database[date_key]
+        lifetime_costs += entry.get("chicks_cost", 0) + entry.get("feed_cost", 0) + entry.get("med_cost", 0) + entry.get("other_cost", 0)
+        for record in entry["sales_records"]:
+            lifetime_revenue += record["revenue"]
+
+    if st.session_state.sub_view == "dashboard":
+        st.markdown(f"""<div style="text-align:center; margin-bottom:20px;">
+            <h2 style="color:#FFF; margin:0; font-size:30px; font-weight:800;">{t["welcome"]}</h2>
+        </div>""", unsafe_allow_html=True)
+
+        col1, col2 = st.columns(2)
+        with col1:
+            st.markdown(f"""
+            <div style="background:linear-gradient(135deg,#0a1a2e,#0f2840); border:1px solid #1a3a5a; border-radius:20px; padding:24px; text-align:center; box-shadow:0 8px 32px rgba(0,0,0,0.4); min-height:170px; display:flex; flex-direction:column; justify-content:center;">
+                <div style="font-size:44px; margin-bottom:6px;">&#x1f423;</div>
+                <div style="color:#38bdf8; font-size:18px; font-weight:700;">{t["choice_inputs"]}</div>
+                <p style="color:#789; font-size:12px; margin-top:4px;">{t["desc_inputs"]}</p>
+            </div>
+            """, unsafe_allow_html=True)
+            if st.button("&#x1f423; "+t["choice_inputs"], key="go_to_inputs", use_container_width=True):
+                st.session_state.sub_view = "inputs"
+                st.session_state.profit_calculated = False
+                st.rerun()
+        with col2:
+            st.markdown(f"""
+            <div style="background:linear-gradient(135deg,#0a2a0a,#103a10); border:1px solid #205a20; border-radius:20px; padding:24px; text-align:center; box-shadow:0 8px 32px rgba(0,0,0,0.4); min-height:170px; display:flex; flex-direction:column; justify-content:center;">
+                <div style="font-size:44px; margin-bottom:6px;">&#x1f4b0;</div>
+                <div style="color:#00E676; font-size:18px; font-weight:700;">{t["choice_withdraw"]}</div>
+                <p style="color:#789; font-size:12px; margin-top:4px;">{t["desc_withdraw"]}</p>
+            </div>
+            """, unsafe_allow_html=True)
+            if st.button("&#x1f4b0; "+t["choice_withdraw"], key="go_to_sales", use_container_width=True):
+                st.session_state.sub_view = "withdraw"
+                st.session_state.profit_calculated = False
+                st.rerun()
+
+        st.markdown("<hr style='border-color:#2a2a3a; margin:20px 0;'>", unsafe_allow_html=True)
+        st.markdown(f"""
+        <div style="background:linear-gradient(135deg,#0a1628,#111827); border-radius:18px; padding:20px 24px; border-left:6px solid #00E676; box-shadow:0 8px 24px rgba(0,0,0,0.3);">
+            <h3 style="color:#00E676; margin:0 0 12px 0; font-weight:800; font-size:20px;">&#x1f4ca; {t['summary_header']}</h3>
+            <div style="display:flex; gap:30px; flex-wrap:wrap;">
+                <div style="flex:1; min-width:180px;">
+                    <span style="color:#AAA; font-size:13px;">{t['total_expenses']}</span>
+                    <div style="color:#FF5252; font-size:24px; font-weight:800;">{lifetime_costs:,.0f} TSH</div>
+                </div>
+                <div style="flex:1; min-width:180px;">
+                    <span style="color:#AAA; font-size:13px;">{t['total_revenue']}</span>
+                    <div style="color:#00E676; font-size:24px; font-weight:800;">{lifetime_revenue:,.0f} TSH</div>
+                </div>
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
+
+        total_chicks = sum(v.get("chicks_qty", 0) for v in st.session_state.farm_database.values())
+        total_morts = sum(v.get("mortality", 0) for v in st.session_state.farm_database.values())
+        net_chicks = total_chicks - total_morts
+
+        col_btn1, col_btn2, col_btn3 = st.columns([1, 2, 1])
+        with col_btn2:
+            if st.button("&#x1f4c8; " + t["calc_profit_btn"], use_container_width=True):
+                st.session_state.profit_calculated = True
+                st.rerun()
+            if st.session_state.profit_calculated:
+                net_profit = lifetime_revenue - lifetime_costs
+                if net_profit > 0:
+                    st.success(f"&#x1f389; {t['profit_msg']} **{net_profit:,.2f} TSH**")
+                else:
+                    st.error(f"&#x26a0;&#xfe0f; {t['loss_msg']} **{abs(net_profit):,.2f} TSH**")
+                st.info(t['profit_chicks'].format(total_chicks, total_morts, net_chicks))
+        st.markdown("<hr style='border-color:#2a2a3a; margin:20px 0;'>", unsafe_allow_html=True)
+        st.markdown(f"""<div style="text-align:center; margin-bottom:16px;">
+            <span style="color:#38bdf8; font-size:22px; font-weight:800;">&#x1f4cb; {t['record_header']}</span>
+        </div>""", unsafe_allow_html=True)
+
+        col_hist1, col_hist2 = st.columns(2)
+        with col_hist1:
+            st.markdown(f"""
+            <div style="background:linear-gradient(135deg,#0a1a2e,#0f2840); border:1px solid #1a3a5a; border-radius:20px; padding:24px; text-align:center; box-shadow:0 8px 32px rgba(0,0,0,0.4); min-height:160px; display:flex; flex-direction:column; justify-content:center;">
+                <div style="font-size:40px; margin-bottom:6px;">&#x1f423;</div>
+                <div style="color:#38bdf8; font-size:17px; font-weight:700;">{t['kumbu_dev_title']}</div>
+                <p style="color:#789; font-size:12px; margin-top:4px;">{t['kumbu_dev_desc']}</p>
+            </div>
+            """, unsafe_allow_html=True)
+            if st.button("&#x1f423; "+t["open_kumbu_dev"], key="go_to_kumbu_dev", use_container_width=True):
+                st.session_state.sub_view = "kumbukumbu_maendeleo"
+                st.session_state.edit_dev_date = None
+                st.rerun()
+
+        with col_hist2:
+            st.markdown(f"""
+            <div style="background:linear-gradient(135deg,#0a2a0a,#103a10); border:1px solid #205a20; border-radius:20px; padding:24px; text-align:center; box-shadow:0 8px 32px rgba(0,0,0,0.4); min-height:160px; display:flex; flex-direction:column; justify-content:center;">
+                <div style="font-size:40px; margin-bottom:6px;">&#x1f4b0;</div>
+                <div style="color:#00E676; font-size:17px; font-weight:700;">{t['kumbu_sale_title']}</div>
+                <p style="color:#789; font-size:12px; margin-top:4px;">{t['kumbu_sale_desc']}</p>
+            </div>
+            """, unsafe_allow_html=True)
+            if st.button("&#x1f4b0; "+t["open_kumbu_sale"], key="go_to_kumbu_sale", use_container_width=True):
+                st.session_state.sub_view = "kumbukumbu_mauzo"
+                st.session_state.edit_sale_key = None
+                st.rerun()
+
+        st.markdown("<br>", unsafe_allow_html=True)
+        if st.button(t["logout"], use_container_width=True):
+            st.session_state.logged_in = False
+            st.session_state.is_activated = False
+            st.session_state.auth_screen = "login"
+            st.session_state.current_user_id = None
+            st.session_state.current_username = None
+            st.session_state.farm_database = {}
+            st.rerun()
+
+    elif st.session_state.sub_view == "inputs":
+        _, center_form, _ = st.columns([1, 2, 1])
+        with center_form:
+            if st.button(t["back_btn"]): st.session_state.sub_view = "dashboard"; st.rerun()
+            
+            chosen_date = st.date_input(t["label_date"], value=date.today())
+            date_str = str(chosen_date)
+            init_date_entry(date_str)
+            current_entry = st.session_state.farm_database[date_str]
+
+            t_chicks = sum(v["chicks_qty"] for v in st.session_state.farm_database.values())
+            t_morts = sum(v["mortality"] for v in st.session_state.farm_database.values())
+            t_remain = t_chicks - t_morts
+            st.markdown(f"""
+            <div style="background:#1a1a2e; border-radius:12px; padding:12px 16px; margin-bottom:15px; border-left:5px solid #38bdf8; display:flex; gap:20px; flex-wrap:wrap; font-size:14px;">
+                <span style="color:white;">&#x1f425; {t['total_chicks']}: <b style="color:#38bdf8;">{t_chicks}</b></span>
+                <span style="color:white;">&#x274c; {t['deaths']}: <b style="color:#FF5252;">{t_morts}</b></span>
+                <span style="color:white;">&#x2705; {t['remaining']}: <b style="color:#00E676;">{t_remain}</b></span>
+            </div>
+            """, unsafe_allow_html=True)
+
+            with st.form(key="inputs_data_capture"):
+                st.markdown(f"<h4 style='color:#38bdf8; margin-top:0;'>{t['input_header']}</h4>", unsafe_allow_html=True)
+                
+                # Uwanja wa Idadi ya vifaranga walioingia bandani leo
+                chicks_qty = st.number_input(t["label_chicks_qty"], min_value=0, value=int(current_entry.get("chicks_qty", 0)), step=1)
+                
+                chicks_cost = st.number_input(t["label_chicks"], value=current_entry["chicks_cost"])
+                feeds = st.number_input(t["label_feed"], value=current_entry["feed_cost"])
+                meds = st.number_input(t["label_med"], value=current_entry["med_cost"])
+                other = st.number_input(t["label_other"], value=current_entry["other_cost"])
+                mortality = st.number_input(t["label_mortality"], value=current_entry["mortality"], step=1)
+                
+                if st.form_submit_button(t["finish_inputs_btn"]):
+                    st.session_state.farm_database[date_str].update({
+                        "chicks_qty": int(chicks_qty),
+                        "chicks_cost": chicks_cost, 
+                        "feed_cost": feeds, 
+                        "med_cost": meds, 
+                        "other_cost": other, 
+                        "mortality": int(mortality), 
+                        "has_inputs": True
+                    })
+                    save_data()
+                    st.success("&#x1f389; Data za gharama na idadi ya kuku zimehifadhiwa!")
+                    time.sleep(1.0)
+                    st.session_state.sub_view = "dashboard"
+                    st.rerun()
+
+    elif st.session_state.sub_view == "withdraw":
+        _, center_form, _ = st.columns([1, 2, 1])
+        with center_form:
+            if st.button(t["back_btn"]): st.session_state.sub_view = "dashboard"; st.rerun()
+            
+            chosen_date = st.date_input(t["label_date"], value=date.today())
+            date_str = str(chosen_date)
+            init_date_entry(date_str)
+            
+            st.markdown(f"<h3 style='color:#00E676;'>{t['sales_header']}</h3>", unsafe_allow_html=True)
+            
+            with st.form(key="sales_data_capture", clear_on_submit=True):
+                customer_name = st.text_input(t["label_customer"], placeholder=t["customer_placeholder"])
+                qty = st.number_input(t["label_qty"], min_value=1, value=1, step=1)
+                price = st.number_input(t["label_price"], value=6500.0)
+                
+                if st.form_submit_button(t["finish_sales_btn"]):
+                    if customer_name.strip() == "":
+                        st.error(t["empty_name"])
+                    else:
+                        revenue = float(qty * price)
+                        st.session_state.farm_database[date_str]["sales_records"].append({
+                            "customer": customer_name.strip(),
+                            "qty": int(qty),
+                            "price": price,
+                            "revenue": revenue
+                        })
+                        st.session_state.farm_database[date_str]["has_sales"] = True
+                        save_data()
+                        st.success(f"&#x1f389; {t['save_success_sale']} {customer_name}!")
+                        time.sleep(1.0)
+                        st.session_state.sub_view = "dashboard"
+                        st.rerun()
+
+    elif st.session_state.sub_view == "kumbukumbu_maendeleo":
+        st.markdown(f"""<div style="text-align:center; padding:5px 0 15px 0;">
+            <span style="font-size:48px;">&#x1f423;</span>
+            <h2 style="color:#38bdf8; margin:5px 0 2px 0; font-size:28px; font-weight:800;">{t['kumbu_dev_title']}</h2>
+            <p style="color:#888; font-size:13px; margin:0;">{t['kumbu_dev_desc']}</p>
+        </div>""", unsafe_allow_html=True)
+
+        input_dates = {k: v for k, v in st.session_state.farm_database.items()
+                       if v.get("has_inputs") or any(v.get(k, 0) > 0 for k in ("chicks_qty", "chicks_cost", "feed_cost", "med_cost", "other_cost"))}
+        if input_dates:
+            t_chicks_d = sum(v.get("chicks_qty", 0) for v in input_dates.values())
+            t_morts_d = sum(v.get("mortality", 0) for v in input_dates.values())
+            t_costs_d = sum(v.get("chicks_cost", 0) + v.get("feed_cost", 0) + v.get("med_cost", 0) + v.get("other_cost", 0) for v in input_dates.values())
+            st.markdown(f"""
+            <div style="display:flex; gap:8px; flex-wrap:wrap; margin-bottom:18px;">
+                <div style="flex:1; min-width:100px; background:linear-gradient(135deg,#0a1a2e,#0f2840); border-radius:14px; padding:12px; text-align:center; border:1px solid #1a3a5a;">
+                    <div style="font-size:24px;">&#x1f425;</div>
+                    <div style="color:#38bdf8; font-size:20px; font-weight:800;">{t_chicks_d}</div>
+                    <div style="color:#789; font-size:10px; font-weight:600;">{t['total_chicks']}</div>
+                </div>
+                <div style="flex:1; min-width:100px; background:linear-gradient(135deg,#2a0a0a,#3a1010); border-radius:14px; padding:12px; text-align:center; border:1px solid #5a2020;">
+                    <div style="font-size:24px;">&#x274c;</div>
+                    <div style="color:#FF5252; font-size:20px; font-weight:800;">{t_morts_d}</div>
+                    <div style="color:#789; font-size:10px; font-weight:600;">{t['deaths']}</div>
+                </div>
+                <div style="flex:1; min-width:100px; background:linear-gradient(135deg,#0a2a0a,#103a10); border-radius:14px; padding:12px; text-align:center; border:1px solid #205a20;">
+                    <div style="font-size:24px;">&#x2705;</div>
+                    <div style="color:#00E676; font-size:20px; font-weight:800;">{t_chicks_d - t_morts_d}</div>
+                    <div style="color:#789; font-size:10px; font-weight:600;">{t['remaining']}</div>
+                </div>
+                <div style="flex:1; min-width:120px; background:linear-gradient(135deg,#1a1a2e,#16213e); border-radius:14px; padding:12px; text-align:center; border:1px solid #0f3460;">
+                    <div style="font-size:24px;">&#x1f4b0;</div>
+                    <div style="color:#FFD700; font-size:16px; font-weight:800;">{t_costs_d:,.0f} TSH</div>
+                    <div style="color:#789; font-size:10px; font-weight:600;">{t['total_expenses']}</div>
+                </div>
+                <div style="flex:1; min-width:80px; background:linear-gradient(135deg,#1a1a2e,#16213e); border-radius:14px; padding:12px; text-align:center; border:1px solid #0f3460;">
+                    <div style="font-size:24px;">&#x1f4cb;</div>
+                    <div style="color:#38bdf8; font-size:20px; font-weight:800;">{len(input_dates)}</div>
+                    <div style="color:#789; font-size:10px; font-weight:600;">Siku</div>
+                </div>
+            </div>
+            """, unsafe_allow_html=True)
+
+        _, center_col, _ = st.columns([0.3, 2.4, 0.3])
+        with center_col:
+            if input_dates:
+                for date_key in sorted(input_dates.keys(), reverse=True):
+                    e = input_dates[date_key]
+                    day_cost = e.get("chicks_cost", 0) + e.get("feed_cost", 0) + e.get("med_cost", 0) + e.get("other_cost", 0)
+                    if st.session_state.edit_dev_date == date_key:
+                        with st.form(key=f"edit_dev_form_{date_key}"):
+                            st.markdown(f"""<div style="background:linear-gradient(135deg,#0a1a2e,#0f2840); border-radius:14px; padding:18px; border:2px solid #38bdf8; margin-bottom:12px;">
+                                <h4 style="color:#38bdf8; margin:0 0 14px 0;">&#x270f;&#xfe0f; {t['edit_record_title'].format(date_key)}</h4>""", unsafe_allow_html=True)
+                            ec_qty = st.number_input(t["chicks_input_label"], min_value=0, value=int(e.get("chicks_qty", 0)), step=1, key=f"ed_qty_{date_key}")
+                            ec_cost = st.number_input(t["chicks_cost_label"], value=e.get("chicks_cost", 0.0), key=f"ed_cost_{date_key}")
+                            ef_cost = st.number_input(t["feed_cost_label"], value=e.get("feed_cost", 0.0), key=f"ed_feed_{date_key}")
+                            em_cost = st.number_input(t["med_cost_label"], value=e.get("med_cost", 0.0), key=f"ed_med_{date_key}")
+                            eo_cost = st.number_input(t["other_cost_label"], value=e.get("other_cost", 0.0), key=f"ed_other_{date_key}")
+                            emort = st.number_input(t["mortality_label"], min_value=0, value=int(e.get("mortality", 0)), step=1, key=f"ed_mort_{date_key}")
+                            c1, c2 = st.columns(2)
+                            with c1:
+                                if st.form_submit_button(t["save_btn"], use_container_width=True):
+                                    st.session_state.farm_database[date_key].update({"chicks_qty": int(ec_qty), "chicks_cost": ec_cost, "feed_cost": ef_cost, "med_cost": em_cost, "other_cost": eo_cost, "mortality": int(emort)})
+                                    save_data()
+                                    st.session_state.edit_dev_date = None
+                                    st.success(t["save_success"])
+                                    time.sleep(0.5)
+                                    st.rerun()
+                            with c2:
+                                if st.form_submit_button(t["cancel_btn"], use_container_width=True):
+                                    st.session_state.edit_dev_date = None
+                                    st.rerun()
+                            st.markdown("</div>", unsafe_allow_html=True)
+                    else:
+                        surviving = e.get("chicks_qty", 0) - e.get("mortality", 0)
+                        st.markdown(f"""
+                        <div style="background:#12121a; border-radius:16px; padding:0; margin-bottom:12px; border:1px solid #2a2a3a; overflow:hidden; box-shadow:0 6px 20px rgba(0,0,0,0.3);">
+                            <div style="background:linear-gradient(135deg,#0f2027,#203a43); padding:12px 16px; display:flex; justify-content:space-between; align-items:center;">
+                                <span style="color:#FFF; font-size:15px; font-weight:700;">&#x1f4c5; {date_key}</span>
+                                <span style="background:rgba(56,189,248,0.15); color:#38bdf8; padding:3px 12px; border-radius:20px; font-size:12px; font-weight:600;">{t['day_qty_badge'].format(e.get('chicks_qty', 0))}</span>
+                            </div>
+                            <div style="padding:14px 16px;">
+                                <div style="display:grid; grid-template-columns:1fr 1fr; gap:6px 16px; font-size:13px;">
+                                    <span style="color:#AAA;">&#x1f425; {t['chicks_cost_label']}</span>
+                                    <span style="text-align:right; color:#FFF; font-weight:600;">{e.get('chicks_cost', 0):,.0f} TSH</span>
+                                    <span style="color:#AAA;">&#x1f33e; {t['feed_cost_label']}</span>
+                                    <span style="text-align:right; color:#FFF; font-weight:600;">{e.get('feed_cost', 0):,.0f} TSH</span>
+                                    <span style="color:#AAA;">💊 {t['med_cost_label']}</span>
+                                    <span style="text-align:right; color:#FFF; font-weight:600;">{e.get('med_cost', 0):,.0f} TSH</span>
+                                    <span style="color:#AAA;">&#x1f527; {t['other_cost_label']}</span>
+                                    <span style="text-align:right; color:#FFF; font-weight:600;">{e.get('other_cost', 0):,.0f} TSH</span>
+                                </div>
+                                <div style="display:flex; gap:10px; margin-top:10px; padding-top:10px; border-top:1px solid #2a2a3a;">
+                                    <span style="flex:1; text-align:center; background:#1a1a2e; border-radius:8px; padding:6px; font-size:12px;">
+                                        <span style="color:#FF5252;">&#x274c; {e.get('mortality', 0)}</span>
+                                        <span style="color:#789; display:block; font-size:10px;">{t['deaths']}</span>
+                                    </span>
+                                    <span style="flex:1; text-align:center; background:#1a1a2e; border-radius:8px; padding:6px; font-size:12px;">
+                                        <span style="color:#00E676;">&#x2705; {surviving}</span>
+                                        <span style="color:#789; display:block; font-size:10px;">{t['remaining']}</span>
+                                    </span>
+                                    <span style="flex:1; text-align:center; background:#1a1a2e; border-radius:8px; padding:6px; font-size:12px;">
+                                        <span style="color:#FFD700;">&#x1f4b0; {day_cost:,.0f} TSH</span>
+                                        <span style="color:#789; display:block; font-size:10px;">Jumla</span>
+                                    </span>
+                                </div>
+                            </div>
+                        </div>
+                        """, unsafe_allow_html=True)
+                        _, btn_col, _ = st.columns([2.5, 1, 2.5])
+                        with btn_col:
+                            if st.button(t["edit_btn"], key=f"edit_dev_btn_{date_key}", use_container_width=True):
+                                st.session_state.edit_dev_date = date_key
+                                st.rerun()
+            else:
+                st.markdown(f"""
+                <div style="background:linear-gradient(135deg,#0a0a1a,#1a1a2e); border-radius:20px; padding:40px 20px; text-align:center; border:2px dashed #2a2a4a;">
+                    <div style="font-size:56px; margin-bottom:10px;">&#x1f4ed;</div>
+                    <p style="color:#38bdf8; font-size:18px; font-weight:700; margin:0 0 6px 0;">{t['no_dev_records']}</p>
+                    <p style="color:#666; font-size:13px; margin:0;">{t['no_dev_hint']}</p>
+                </div>
+                """, unsafe_allow_html=True)
+        st.markdown("<br>", unsafe_allow_html=True)
+        if st.button(t["back_dashboard"], key="back_from_kumbu_dev", use_container_width=True):
+            st.session_state.sub_view = "dashboard"
+            st.rerun()
+
+    elif st.session_state.sub_view == "kumbukumbu_mauzo":
+        st.markdown(f"""<div style="text-align:center; padding:5px 0 15px 0;">
+            <span style="font-size:48px;">&#x1f4b0;</span>
+            <h2 style="color:#00E676; margin:5px 0 2px 0; font-size:28px; font-weight:800;">{t['kumbu_sale_title']}</h2>
+            <p style="color:#888; font-size:13px; margin:0;">{t['kumbu_sale_desc']}</p>
+        </div>""", unsafe_allow_html=True)
+
+        sale_dates = {k: v for k, v in st.session_state.farm_database.items() if v.get("has_sales") or len(v.get("sales_records", [])) > 0}
+        if sale_dates:
+            t_rev_s = sum(sum(r["revenue"] for r in v["sales_records"]) for v in sale_dates.values())
+            t_qty_s = sum(sum(r["qty"] for r in v["sales_records"]) for v in sale_dates.values())
+            t_cust_s = sum(len(v["sales_records"]) for v in sale_dates.values())
+            st.markdown(f"""
+            <div style="display:flex; gap:8px; flex-wrap:wrap; margin-bottom:18px;">
+                <div style="flex:1; min-width:120px; background:linear-gradient(135deg,#0a2a0a,#103a10); border-radius:14px; padding:12px; text-align:center; border:1px solid #205a20;">
+                    <div style="font-size:24px;">&#x1f4b0;</div>
+                    <div style="color:#FFD700; font-size:18px; font-weight:800;">{t_rev_s:,.0f} TSH</div>
+                    <div style="color:#789; font-size:10px; font-weight:600;">{t['total_revenue']}</div>
+                </div>
+                <div style="flex:1; min-width:80px; background:linear-gradient(135deg,#0a1a2e,#0f2840); border-radius:14px; padding:12px; text-align:center; border:1px solid #1a3a5a;">
+                    <div style="font-size:24px;">&#x1f414;</div>
+                    <div style="color:#38bdf8; font-size:20px; font-weight:800;">{t_qty_s}</div>
+                    <div style="color:#789; font-size:10px; font-weight:600;">{t['label_qty']}</div>
+                </div>
+                <div style="flex:1; min-width:80px; background:linear-gradient(135deg,#1a1a2e,#16213e); border-radius:14px; padding:12px; text-align:center; border:1px solid #0f3460;">
+                    <div style="font-size:24px;">&#x1f465;</div>
+                    <div style="color:#00E676; font-size:20px; font-weight:800;">{t_cust_s}</div>
+                    <div style="color:#789; font-size:10px; font-weight:600;">Wateja</div>
+                </div>
+                <div style="flex:1; min-width:80px; background:linear-gradient(135deg,#1a1a2e,#16213e); border-radius:14px; padding:12px; text-align:center; border:1px solid #0f3460;">
+                    <div style="font-size:24px;">&#x1f4cb;</div>
+                    <div style="color:#38bdf8; font-size:20px; font-weight:800;">{len(sale_dates)}</div>
+                    <div style="color:#789; font-size:10px; font-weight:600;">Siku</div>
+                </div>
+            </div>
+            """, unsafe_allow_html=True)
+
+        _, center_col, _ = st.columns([0.3, 2.4, 0.3])
+        with center_col:
+            if sale_dates:
+                for date_key in sorted(sale_dates.keys(), reverse=True):
+                    e = sale_dates[date_key]
+                    day_qty = sum(r["qty"] for r in e["sales_records"])
+                    day_rev = sum(r["revenue"] for r in e["sales_records"])
+                    st.markdown(f"""
+                    <div style="background:#12121a; border-radius:16px; margin-bottom:14px; border:1px solid #2a3a2a; overflow:hidden; box-shadow:0 6px 20px rgba(0,0,0,0.3);">
+                        <div style="background:linear-gradient(135deg,#0a2a0a,#1a3a1a); padding:12px 16px; display:flex; justify-content:space-between; align-items:center;">
+                            <span style="color:#FFF; font-size:15px; font-weight:700;">&#x1f4c5; {date_key}</span>
+                            <div style="text-align:right;">
+                                <span style="background:rgba(0,230,118,0.15); color:#00E676; padding:3px 12px; border-radius:20px; font-size:12px; font-weight:600;">{t['day_qty_badge'].format(day_qty)}</span>
+                                <div style="color:#FFD700; font-size:13px; font-weight:700; margin-top:3px;">{t['day_sales_total'].format(day_rev)}</div>
+                            </div>
+                        </div>
+                        <div style="padding:10px 16px 6px 16px;">
+                    """, unsafe_allow_html=True)
+                    for idx, r in enumerate(e["sales_records"]):
+                        sale_key = f"{date_key}|{idx}"
+                        if st.session_state.edit_sale_key == sale_key:
+                            with st.form(key=f"edit_sale_form_{date_key}_{idx}"):
+                                st.markdown(f"""<div style="background:linear-gradient(135deg,#0a2a0a,#1a3a1a); border-radius:12px; padding:16px; border:2px solid #00E676; margin-bottom:10px;">
+                                    <h4 style="color:#00E676; margin:0 0 12px 0;">&#x270f;&#xfe0f; {t['edit_sale_title'].format(date_key)}</h4>""", unsafe_allow_html=True)
+                                sc_name = st.text_input(t["label_customer"], value=r["customer"], key=f"es_name_{date_key}_{idx}")
+                                sc_qty = st.number_input(t["label_qty"], min_value=1, value=int(r["qty"]), step=1, key=f"es_qty_{date_key}_{idx}")
+                                sc_price = st.number_input(t["label_price"], value=r["price"], key=f"es_price_{date_key}_{idx}")
+                                c1, c2 = st.columns(2)
+                                with c1:
+                                    if st.form_submit_button(t["save_btn"], use_container_width=True):
+                                        if sc_name.strip():
+                                            new_revenue = float(sc_qty * sc_price)
+                                            st.session_state.farm_database[date_key]["sales_records"][idx] = {"customer": sc_name.strip(), "qty": int(sc_qty), "price": sc_price, "revenue": new_revenue}
+                                            save_data()
+                                            st.session_state.edit_sale_key = None
+                                            st.success(t["save_success"])
+                                            time.sleep(0.5)
+                                            st.rerun()
+                                        else:
+                                            st.error(t["empty_name"])
+                                with c2:
+                                    if st.form_submit_button(t["cancel_btn"], use_container_width=True):
+                                        st.session_state.edit_sale_key = None
+                                        st.rerun()
+                                st.markdown("</div>", unsafe_allow_html=True)
+                        else:
+                            st.markdown(f"""
+                            <div style="display:flex; align-items:center; background:#1a1a2a; border-radius:10px; padding:10px 14px; margin-bottom:6px; border-left:4px solid #00E676;">
+                                <div style="flex:1;">
+                                    <span style="color:#FFF; font-size:14px; font-weight:600;">&#x1f464; {r['customer']}</span>
+                                </div>
+                                <div style="text-align:right;">
+                                    <span style="color:#AAA; font-size:12px;">{r['qty']} {t['chickens']} &#xd7; {r['price']:,.0f} TSH</span>
+                                    <span style="color:#00E676; font-size:14px; font-weight:700; margin-left:10px;">= {r['revenue']:,.0f} TSH</span>
+                                </div>
+                            </div>
+                            """, unsafe_allow_html=True)
+                            _, btn_col, _ = st.columns([2.5, 1, 2.5])
+                            with btn_col:
+                                if st.button(t["edit_btn"], key=f"edit_sale_btn_{date_key}_{idx}", use_container_width=True):
+                                    st.session_state.edit_sale_key = sale_key
+                                    st.rerun()
+                    st.markdown("</div></div>", unsafe_allow_html=True)
+            else:
+                st.markdown(f"""
+                <div style="background:linear-gradient(135deg,#0a0a1a,#1a1a2e); border-radius:20px; padding:40px 20px; text-align:center; border:2px dashed #2a2a4a;">
+                    <div style="font-size:56px; margin-bottom:10px;">&#x1f4ed;</div>
+                    <p style="color:#00E676; font-size:18px; font-weight:700; margin:0 0 6px 0;">{t['no_sale_records']}</p>
+                    <p style="color:#666; font-size:13px; margin:0;">{t['no_sale_hint']}</p>
+                </div>
+                """, unsafe_allow_html=True)
+        st.markdown("<br>", unsafe_allow_html=True)
+        if st.button(t["back_dashboard"], key="back_from_kumbu_sale", use_container_width=True):
+            st.session_state.sub_view = "dashboard"
+            st.rerun()
