@@ -476,6 +476,14 @@ translations = {
         "viewing_round_title": "Viewing Round {}",
         "viewing_back": "Back to Dashboard",
         "archived_at": "Archived on",
+        "forgot_pass": "Forgot password?",
+        "reset_pass_title": "&#x1f511; Reset Password",
+        "reset_pass_btn": "&#x2705; Reset Password",
+        "reset_success": "&#x1f389; Password reset successful! Login with your new password.",
+        "reset_user_not_found": "&#x274c; Username not found!",
+        "reset_pass_mismatch": "&#x274c; Passwords do not match!",
+        "reset_pass_empty": "&#x274c; Please fill all fields!",
+        "back_to_login": "&#x2190; Back to Login",
     },
     "Swahili": {
         "title": "MFUGAJI KWANZA", "subtitle": "Mfumo wa Kisasa wa Usimamizi wa Kuku",
@@ -555,6 +563,14 @@ translations = {
         "viewing_round_title": "Kuangalia Awamu {}",
         "viewing_back": "Rudi Kwenye Dashibodi",
         "archived_at": "Ilihifadhiwa tarehe",
+        "forgot_pass": "Umesahau password?",
+        "reset_pass_title": "&#x1f511; Weka Password Mpya",
+        "reset_pass_btn": "&#x2705; Badilisha Password",
+        "reset_success": "&#x1f389; Password imebadilishwa! Ingia na password mpya.",
+        "reset_user_not_found": "&#x274c; Jina la mtumiaji halikupatikana!",
+        "reset_pass_mismatch": "&#x274c; Password hazifanani!",
+        "reset_pass_empty": "&#x274c; Tafadhali jaza sehemu zote!",
+        "back_to_login": "&#x2190; Rudi Kwenye Kuingia",
     }
 }
 
@@ -655,6 +671,9 @@ if not st.session_state.logged_in:
                     else:
                         st.error(t["error_msg"])
             st.markdown("</div>", unsafe_allow_html=True)
+            if st.button(t["forgot_pass"], key="btn_forgot_pass", use_container_width=True):
+                st.session_state.auth_screen = "reset_password"
+                st.rerun()
             if st.button("&#x1f4dd; "+t["go_to_signup"], key="go_to_signup_btn", use_container_width=True):
                 st.session_state.auth_screen = "signup"
                 st.rerun()
@@ -693,6 +712,39 @@ if not st.session_state.logged_in:
                         st.error(t["error_fields"])
             st.markdown("</div>", unsafe_allow_html=True)
             if st.button("&#x1f511; "+t["go_to_login"], key="go_to_login_btn", use_container_width=True):
+                st.session_state.auth_screen = "login"
+                st.rerun()
+
+        elif st.session_state.auth_screen == "reset_password":
+            st.markdown("""<div class="auth-card">""", unsafe_allow_html=True)
+            st.markdown(f"""<div style="text-align:center; margin-bottom:20px;">
+                <span style="font-size:48px;">&#x1f511;</span>
+                <h3 style="color:#FFD700; margin:8px 0 2px 0; font-size:24px; font-weight:800;">{t["reset_pass_title"]}</h3>
+            </div>""", unsafe_allow_html=True)
+            rp_user = st.text_input("&#x1f464; " + t["username"], placeholder="Mfano: juma, mama_maria", key="rp_user")
+            rp_pass1 = st.text_input("&#x1f511; " + t["password"] + " (Mpya)", type="password", placeholder=t["pass_placeholder"], key="rp_pass1")
+            rp_pass2 = st.text_input("&#x1f511; " + "Rudia Password Mpya", type="password", placeholder="Andika tena password", key="rp_pass2")
+            if st.button("&#x2705; " + t["reset_pass_btn"], type="primary", use_container_width=True):
+                u = rp_user.strip()
+                p1 = rp_pass1.strip()
+                p2 = rp_pass2.strip()
+                if u and p1 and p2:
+                    user = db_get_user_by_username(u)
+                    if user:
+                        if p1 == p2:
+                            db_update_user(user["id"], {"password": p1})
+                            st.success(t["reset_success"])
+                            time.sleep(1.5)
+                            st.session_state.auth_screen = "login"
+                            st.rerun()
+                        else:
+                            st.error(t["reset_pass_mismatch"])
+                    else:
+                        st.error(t["reset_user_not_found"])
+                else:
+                    st.error(t["reset_pass_empty"])
+            st.markdown("</div>", unsafe_allow_html=True)
+            if st.button("&#x2190; "+t["back_to_login"], key="btn_back_to_login", use_container_width=True):
                 st.session_state.auth_screen = "login"
                 st.rerun()
 
