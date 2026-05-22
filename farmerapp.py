@@ -364,6 +364,8 @@ if "viewing_round" not in st.session_state:
     st.session_state.viewing_round = None
 if "confirm_delete_round" not in st.session_state:
     st.session_state.confirm_delete_round = None
+if "round_history_expanded" not in st.session_state:
+    st.session_state.round_history_expanded = False
 
 init_db()
 
@@ -961,52 +963,52 @@ else:
 
         # --- Rounds History ---
         st.markdown("<hr style='border-color:#2a2a3a; margin:20px 0;'>", unsafe_allow_html=True)
-        st.markdown(f"""<div style="text-align:center; margin-bottom:16px;">
-            <span style="color:#FFD700; font-size:20px; font-weight:800;">&#x1f4e6; {t['round_history']}</span>
-        </div>""", unsafe_allow_html=True)
-
-        if st.session_state.rounds_list:
-            for rnd in st.session_state.rounds_list:
-                rn = rnd["round_number"]
-                rn_date = rnd["archived_at"][:10] if rnd.get("archived_at") else ""
-                is_confirm = st.session_state.confirm_delete_round == rn
-                st.markdown(f"""
-                <div style="background:linear-gradient(135deg,#0a1628,#111827); border-radius:14px; padding:10px 14px; margin-bottom:8px; border:1px solid #2a2a4a; cursor:pointer; transition:0.2s;">
-                    <div style="display:flex; justify-content:space-between; align-items:center;">
-                        <div>
-                            <span style="color:#FFD700; font-weight:800; font-size:15px;">{t['round_label'].format(rn)}</span>
-                            <span style="color:#888; font-size:11px; margin-left:8px;">&#x1f4c5; {rn_date}</span>
+        arrow = "&#x25bc;" if st.session_state.round_history_expanded else "&#x25b6;"
+        if st.button(f"&#x1f4e6; {t['round_history']}  {arrow}", key="toggle_round_hist", use_container_width=True):
+            st.session_state.round_history_expanded = not st.session_state.round_history_expanded
+            st.rerun()
+        
+        if st.session_state.round_history_expanded:
+            if st.session_state.rounds_list:
+                for rnd in st.session_state.rounds_list:
+                    rn = rnd["round_number"]
+                    rn_date = rnd["archived_at"][:10] if rnd.get("archived_at") else ""
+                    is_confirm = st.session_state.confirm_delete_round == rn
+                    st.markdown(f"""
+                    <div style="background:#1a1a2e; border-radius:12px; padding:8px 12px; margin-bottom:6px; border:1px solid #2a2a4a;">
+                        <div style="display:flex; justify-content:space-between; align-items:center;">
+                            <span style="color:#FFD700; font-weight:700; font-size:14px;">{t['round_label'].format(rn)}</span>
+                            <span style="color:#888; font-size:11px;">&#x1f4c5; {rn_date}</span>
                         </div>
                     </div>
+                    """, unsafe_allow_html=True)
+                    c_view, c_del = st.columns([3, 1])
+                    with c_view:
+                        if st.button("&#x1f441; Angalia / View", key=f"view_rnd_{rn}", use_container_width=True):
+                            st.session_state.viewing_round = rn
+                            st.session_state.sub_view = "viewing_round"
+                            st.rerun()
+                    with c_del:
+                        if is_confirm:
+                            if st.button("&#x26a0; Ndiyo / Yes", key=f"confirm_del_{rn}", use_container_width=True):
+                                db_delete_round(st.session_state.current_user_id, rn)
+                                st.session_state.confirm_delete_round = None
+                                load_rounds()
+                                st.success(t["round_deleted"])
+                                time.sleep(0.5)
+                                st.rerun()
+                        else:
+                            if st.button("&#x274c; " + t["delete_round"], key=f"del_rnd_{rn}", use_container_width=True):
+                                st.session_state.confirm_delete_round = rn
+                                st.rerun()
+            else:
+                st.markdown(f"""
+                <div style="background:linear-gradient(135deg,#0a0a1a,#1a1a2e); border-radius:20px; padding:30px 20px; text-align:center; border:2px dashed #2a2a4a;">
+                    <div style="font-size:40px; margin-bottom:8px;">&#x1f4ed;</div>
+                    <p style="color:#AAA; font-size:15px; font-weight:600; margin:0 0 4px 0;">{t['no_rounds']}</p>
+                    <p style="color:#666; font-size:12px; margin:0;">{t['no_rounds_hint']}</p>
                 </div>
                 """, unsafe_allow_html=True)
-                c_view, c_del = st.columns([3, 1])
-                with c_view:
-                    if st.button("&#x1f441; Angalia / View", key=f"view_rnd_{rn}", use_container_width=True):
-                        st.session_state.viewing_round = rn
-                        st.session_state.sub_view = "viewing_round"
-                        st.rerun()
-                with c_del:
-                    if is_confirm:
-                        if st.button("&#x26a0; Ndiyo / Yes", key=f"confirm_del_{rn}", use_container_width=True):
-                            db_delete_round(st.session_state.current_user_id, rn)
-                            st.session_state.confirm_delete_round = None
-                            load_rounds()
-                            st.success(t["round_deleted"])
-                            time.sleep(0.5)
-                            st.rerun()
-                    else:
-                        if st.button("&#x274c; " + t["delete_round"], key=f"del_rnd_{rn}", use_container_width=True):
-                            st.session_state.confirm_delete_round = rn
-                            st.rerun()
-        else:
-            st.markdown(f"""
-            <div style="background:linear-gradient(135deg,#0a0a1a,#1a1a2e); border-radius:20px; padding:30px 20px; text-align:center; border:2px dashed #2a2a4a;">
-                <div style="font-size:40px; margin-bottom:8px;">&#x1f4ed;</div>
-                <p style="color:#AAA; font-size:15px; font-weight:600; margin:0 0 4px 0;">{t['no_rounds']}</p>
-                <p style="color:#666; font-size:12px; margin:0;">{t['no_rounds_hint']}</p>
-            </div>
-            """, unsafe_allow_html=True)
 
         st.markdown("<br>", unsafe_allow_html=True)
         if st.button(t["logout"], use_container_width=True):
