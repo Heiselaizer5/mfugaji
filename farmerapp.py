@@ -567,7 +567,10 @@ st.markdown(f"""
     .stApp {{ background-image: url("{broiler_bg_url}"); background-size: cover; background-position: center; background-repeat: no-repeat; background-attachment: fixed; }}
     .stApp::before {{ content: ""; position: absolute; top: 0; left: 0; width: 100%; height: 100%; background-color: rgba(0, 0, 0, 0.78); z-index: 0; }}
     [data-testid="stHeader"] {{ background-color: transparent !important; z-index: 10; }}
-    .main .block-container {{ z-index: 1; padding-top: 1.2rem !important; }}
+    .main .block-container {{ z-index: 1; padding-top: 1.2rem !important; max-width: 100% !important; padding-left: 1.5rem !important; padding-right: 1.5rem !important; }}
+    .reportview-container {{ margin: 0 !important; padding: 0 !important; border: none !important; }}
+    .reportview-container .main {{ padding: 0 !important; }}
+    #root > div:first-child {{ border: none !important; }}
     .brand-title {{ color: #FFFFFF; font-family: 'Arial Black', sans-serif; font-weight: 900; font-size: 36px; text-shadow: 3px 3px 6px rgba(0,0,0,0.8); text-align: center; letter-spacing:2px; }}
     .brand-subtitle {{ font-size: 13px; color: #00E676; display: block; margin-top: -5px; font-weight: 600; letter-spacing:1px; }}
     
