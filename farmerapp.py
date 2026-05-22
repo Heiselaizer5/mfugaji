@@ -1328,7 +1328,6 @@ else:
         if st.button(t["back_dashboard"], key="back_from_kumbu_sale", use_container_width=True):
             st.session_state.sub_view = "dashboard"
             st.rerun()
-
     elif st.session_state.sub_view == "viewing_round":
         rn = st.session_state.viewing_round
         if rn is None:
