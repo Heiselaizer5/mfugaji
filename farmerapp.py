@@ -276,6 +276,20 @@ def check_subscription_expiry(user_id):
             pass
     return True
 
+def get_remaining_days(user_id):
+    user = db_get_user_by_id(user_id)
+    if not user:
+        return 0
+    subscription_end = user.get("subscription_end")
+    if not subscription_end:
+        return 0
+    try:
+        expiry = datetime.strptime(subscription_end, "%Y-%m-%d %H:%M:%S")
+        remaining = (expiry - datetime.now()).days
+        return max(0, remaining)
+    except:
+        return 0
+
 def activate_subscription(user_id, days=30):
     now = datetime.now()
     expiry = now + timedelta(days=days)
@@ -979,16 +993,23 @@ else:
             now = datetime.now()
             days_remaining = (expiry_date - now).days
             if days_remaining > 0:
-                subscription_end_text = f"&#128337; Malipo yanaisha kwa siku {days_remaining} / Subscription expires in {days_remaining} days"
+                if days_remaining <= 5:
+                    subscription_end_text = f"&#9888;&#65039; TAHADHARI: Siku {days_remaining} zimesalia! Lipia sasa! / WARNING: {days_remaining} days left! Pay now!"
+                else:
+                    subscription_end_text = f"&#128337; Malipo yanaisha kwa siku {days_remaining} / Subscription expires in {days_remaining} days"
             elif days_remaining == 0:
                 subscription_end_text = "&#9888; Malipo yanaisha leo! / Subscription expires today!"
         except:
             pass
     
     if subscription_end_text:
+        bg = "background:linear-gradient(135deg,#2a0a0a,#3a1010)" if days_remaining <= 5 else "background:linear-gradient(135deg,#1a1a0a,#2a2a1a)"
+        bd = "border-left:5px solid #FF5252" if days_remaining <= 5 else "border-left:5px solid #FFD700"
+        clr = "#FF5252" if days_remaining <= 5 else "#FFD700"
         st.markdown(f"""
-        <div style="background:linear-gradient(135deg,#1a1a0a,#2a2a1a); border-radius:12px; padding:12px; margin-bottom:16px; border-left:5px solid #FFD700;">
-            <p style="color:#FFD700; margin:0; font-size:14px; font-weight:700;">{subscription_end_text}</p>
+        <div style="{bg}; border-radius:12px; padding:12px; margin-bottom:16px; {bd};">
+            <p style="color:{clr}; margin:0; font-size:14px; font-weight:700;">{subscription_end_text}</p>
+            {"<p style='color:#FF5252; margin:4px 0 0 0; font-size:12px; font-weight:600;'>&#x1f514; Bonyeza 'Lipia Sasa' hapo juu kuongeza muda! / Click 'Pay Now' above to extend!</p>" if days_remaining <= 5 else ""}
         </div>
         """, unsafe_allow_html=True)
         
