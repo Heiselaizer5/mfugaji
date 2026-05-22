@@ -592,16 +592,11 @@ st.markdown(f"""
     .auth-switch a {{ color: #00E676; text-decoration: none; font-weight: 600; cursor: pointer; }}
     .auth-switch a:hover {{ color: #00FF5E; text-decoration: underline; }}
     [data-testid="stFormSubmitInstruction"], .stFormSubmitInstruction {{ display: none !important; visibility: hidden !important; height: 0 !important; overflow: hidden !important; }}
+    .auth-card .stButton {{ margin-top: 12px !important; }}
     </style>
     """, unsafe_allow_html=True)
 
-# --- Auth forms inline CSS ---
-st.markdown("""
-<style>
-div[data-testid="stForm"] div:last-child { display: none !important; }
-form [data-testid="baseButton-secondary"] { margin-top: 8px; }
-</style>
-""", unsafe_allow_html=True)
+# --- Top Header ---
 
 # --- SEHEMU YA 1: AUTHENTICATION FLOW ---
 col_title, col_lang = st.columns([4, 1.3])
@@ -631,35 +626,34 @@ if not st.session_state.logged_in:
     with center_auth:
         if st.session_state.auth_screen == "login":
             st.markdown("""<div class="auth-card">""", unsafe_allow_html=True)
-            with st.form(key="login_secure_form"):
-                st.markdown(f"""<div style="text-align:center; margin-bottom:20px;">
-                    <span style="font-size:48px;">&#x1f512;</span>
-                    <h3 style="color:#00E676; margin:8px 0 2px 0; font-size:24px; font-weight:800;">{t["login_header"]}</h3>
-                </div>""", unsafe_allow_html=True)
-                user_input = st.text_input("&#x1f464; " + t["username"], placeholder="Mfano: juma, mama_maria")
-                pass_input = st.text_input("&#x1f511; " + t["password"], type="password", placeholder=t["pass_placeholder"])
-                if st.form_submit_button("&#x1f680; " + t["login_btn"]):
-                    username_clean = user_input.strip()
-                    user = db_get_user_by_username(username_clean)
-                    if user and user.get("password") == pass_input:
-                        user_id = user["id"]
-                        subscription_active = check_subscription_expiry(user_id)
-                        
-                        st.session_state.current_user_id = user_id
-                        st.session_state.current_username = username_clean
-                        st.session_state.logged_in = True
-                        st.session_state.is_activated = subscription_active
-                        load_data()
-                        load_rounds()
-                        
-                        if subscription_active:
-                            st.success(t["login_success"])
-                        else:
-                            st.warning("&#x23f0; Muda wa malipo umekwisha! Tafadhali lipia tena. / Subscription expired! Please pay again.")
-                        time.sleep(1.0)
-                        st.rerun()
+            st.markdown(f"""<div style="text-align:center; margin-bottom:20px;">
+                <span style="font-size:48px;">&#x1f512;</span>
+                <h3 style="color:#00E676; margin:8px 0 2px 0; font-size:24px; font-weight:800;">{t["login_header"]}</h3>
+            </div>""", unsafe_allow_html=True)
+            user_input = st.text_input("&#x1f464; " + t["username"], placeholder="Mfano: juma, mama_maria")
+            pass_input = st.text_input("&#x1f511; " + t["password"], type="password", placeholder=t["pass_placeholder"])
+            if st.button("&#x1f680; " + t["login_btn"], type="primary", use_container_width=True):
+                username_clean = user_input.strip()
+                user = db_get_user_by_username(username_clean)
+                if user and user.get("password") == pass_input:
+                    user_id = user["id"]
+                    subscription_active = check_subscription_expiry(user_id)
+                    
+                    st.session_state.current_user_id = user_id
+                    st.session_state.current_username = username_clean
+                    st.session_state.logged_in = True
+                    st.session_state.is_activated = subscription_active
+                    load_data()
+                    load_rounds()
+                    
+                    if subscription_active:
+                        st.success(t["login_success"])
                     else:
-                        st.error(t["error_msg"])
+                        st.warning("&#x23f0; Muda wa malipo umekwisha! Tafadhali lipia tena. / Subscription expired! Please pay again.")
+                    time.sleep(1.0)
+                    st.rerun()
+                else:
+                    st.error(t["error_msg"])
             st.markdown("</div>", unsafe_allow_html=True)
             if st.button("&#x1f4dd; "+t["go_to_signup"], key="go_to_signup_btn", use_container_width=True):
                 st.session_state.auth_screen = "signup"
@@ -667,36 +661,35 @@ if not st.session_state.logged_in:
 
         elif st.session_state.auth_screen == "signup":
             st.markdown("""<div class="auth-card">""", unsafe_allow_html=True)
-            with st.form(key="signup_secure_form"):
-                st.markdown(f"""<div style="text-align:center; margin-bottom:20px;">
-                    <span style="font-size:48px;">&#x1f4dd;</span>
-                    <h3 style="color:#00E676; margin:8px 0 2px 0; font-size:24px; font-weight:800;">{t["signup_header"]}</h3>
-                </div>""", unsafe_allow_html=True)
-                reg_name = st.text_input("&#x1f464; " + t["full_name"], placeholder="Mfano: Juma Mohamedi")
-                reg_user = st.text_input("&#x1f465; " + t["username"], placeholder="Mfano: juma_2026")
-                reg_pass = st.text_input("&#x1f511; " + t["password"], type="password", placeholder=t["pass_placeholder"])
-                if st.form_submit_button("&#x2705; " + t["signup_btn"]):
-                    username_clean = reg_user.strip()
-                    if reg_name and username_clean and reg_pass:
-                        try:
-                            existing = db_get_user_by_username(username_clean)
-                            if existing:
-                                st.error("&#x274c; Jina la mtumiaji tayari lipo / Username already exists.")
-                            else:
-                                user_id = db_insert_user(username_clean, reg_pass, 0)
-                                st.session_state.current_user_id = user_id
-                                st.session_state.current_username = username_clean
-                                st.session_state.logged_in = True
-                                st.session_state.is_activated = False
-                                load_data()
-                                load_rounds()
-                                st.success(t["success_msg"])
-                                time.sleep(1.5)
-                                st.rerun()
-                        except Exception as e:
+            st.markdown(f"""<div style="text-align:center; margin-bottom:20px;">
+                <span style="font-size:48px;">&#x1f4dd;</span>
+                <h3 style="color:#00E676; margin:8px 0 2px 0; font-size:24px; font-weight:800;">{t["signup_header"]}</h3>
+            </div>""", unsafe_allow_html=True)
+            reg_name = st.text_input("&#x1f464; " + t["full_name"], placeholder="Mfano: Juma Mohamedi")
+            reg_user = st.text_input("&#x1f465; " + t["username"], placeholder="Mfano: juma_2026")
+            reg_pass = st.text_input("&#x1f511; " + t["password"], type="password", placeholder=t["pass_placeholder"])
+            if st.button("&#x2705; " + t["signup_btn"], type="primary", use_container_width=True):
+                username_clean = reg_user.strip()
+                if reg_name and username_clean and reg_pass:
+                    try:
+                        existing = db_get_user_by_username(username_clean)
+                        if existing:
                             st.error("&#x274c; Jina la mtumiaji tayari lipo / Username already exists.")
-                    else:
-                        st.error(t["error_fields"])
+                        else:
+                            user_id = db_insert_user(username_clean, reg_pass, 0)
+                            st.session_state.current_user_id = user_id
+                            st.session_state.current_username = username_clean
+                            st.session_state.logged_in = True
+                            st.session_state.is_activated = False
+                            load_data()
+                            load_rounds()
+                            st.success(t["success_msg"])
+                            time.sleep(1.5)
+                            st.rerun()
+                    except Exception as e:
+                        st.error("&#x274c; Jina la mtumiaji tayari lipo / Username already exists.")
+                else:
+                    st.error(t["error_fields"])
             st.markdown("</div>", unsafe_allow_html=True)
             if st.button("&#x1f511; "+t["go_to_login"], key="go_to_login_btn", use_container_width=True):
                 st.session_state.auth_screen = "login"
