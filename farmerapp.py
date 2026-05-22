@@ -981,11 +981,31 @@ else:
                     rn = rnd["round_number"]
                     rn_date = rnd["archived_at"][:10] if rnd.get("archived_at") else ""
                     is_confirm = st.session_state.confirm_delete_round == rn
+                    import json
+                    try:
+                        snap = json.loads(rnd.get("summary_json", "{}"))
+                    except:
+                        snap = {}
+                    tc = sum(v.get("chicks_qty", 0) for v in snap.values())
+                    tm = sum(v.get("mortality", 0) for v in snap.values())
+                    tr = 0
+                    for v in snap.values():
+                        for rec in v.get("sales_records", []):
+                            tr += rec.get("revenue", 0)
                     st.markdown(f"""
-                    <div style="background:#1a1a2e; border-radius:12px; padding:8px 12px; margin-bottom:6px; border:1px solid #2a2a4a;">
-                        <div style="display:flex; justify-content:space-between; align-items:center;">
-                            <span style="color:#FFD700; font-weight:700; font-size:14px;">{t['round_label'].format(rn)}</span>
-                            <span style="color:#888; font-size:11px;">&#x1f4c5; {rn_date}</span>
+                    <div class="dashboard-card" style="padding:14px 16px !important; margin-bottom:10px; text-align:left;">
+                        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+                            <span style="color:#FFD700; font-weight:800; font-size:16px;">&#x1f4e6; {t['round_label'].format(rn)}</span>
+                            <span style="color:#888; font-size:12px;">&#x1f4c5; {rn_date}</span>
+                        </div>
+                        <div style="display:flex; gap:8px; flex-wrap:wrap; margin-bottom:8px;">
+                            <span style="color:#AAA; font-size:12px;">&#x1f425; Kuku: <b style="color:#38bdf8;">{tc}</b></span>
+                            <span style="color:#AAA; font-size:12px;">&#x274c; Vifo: <b style="color:#FF5252;">{tm}</b></span>
+                            <span style="color:#AAA; font-size:12px;">&#x2705; Salama: <b style="color:#00E676;">{tc - tm}</b></span>
+                            <span style="color:#AAA; font-size:12px;">&#x1f4b0; Mapato: <b style="color:#00E676;">{tr:,.0f} TSH</b></span>
+                        </div>
+                        <div style="display:flex; gap:6px;">
+                            <div style="flex:3;">{"".join(f'<span style="display:inline-block; width:10px; height:10px; border-radius:3px; margin-right:1px; background:#{"00E676" if v.get("has_inputs") or v.get("has_sales") else "#2a2a3a"};"></span>' for d, v in sorted(snap.items()))}</div>
                         </div>
                     </div>
                     """, unsafe_allow_html=True)
