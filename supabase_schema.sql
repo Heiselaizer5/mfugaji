@@ -7,7 +7,9 @@ CREATE TABLE IF NOT EXISTS users (
     password TEXT NOT NULL,
     is_activated INTEGER DEFAULT 0,
     subscription_start TEXT,
-    subscription_end TEXT
+    subscription_end TEXT,
+    security_question TEXT,
+    security_answer TEXT
 );
 
 CREATE TABLE IF NOT EXISTS farm_dates (

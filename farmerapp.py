@@ -42,12 +42,17 @@ def db_get_user_by_id(user_id):
     conn.close()
     return dict(row) if row else None
 
-def db_insert_user(username, password, is_activated=0):
+def db_insert_user(username, password, is_activated=0, security_question=None, security_answer=None):
     if use_supabase:
-        result = sb.table("users").insert({"username": username, "password": password, "is_activated": is_activated}).execute()
+        data = {"username": username, "password": password, "is_activated": is_activated}
+        if security_question and security_answer:
+            data["security_question"] = security_question
+            data["security_answer"] = security_answer
+        result = sb.table("users").insert(data).execute()
         return result.data[0]["id"] if result.data else None
     conn = get_db()
-    conn.execute("INSERT INTO users (username, password, is_activated) VALUES (?, ?, ?)", (username, password, is_activated))
+    conn.execute("INSERT INTO users (username, password, is_activated, security_question, security_answer) VALUES (?, ?, ?, ?, ?)",
+                 (username, password, is_activated, security_question, security_answer))
     conn.commit()
     cur = conn.execute("SELECT id FROM users WHERE username = ?", (username,))
     user_id = cur.fetchone()["id"]
@@ -204,7 +209,9 @@ def init_db():
             password TEXT NOT NULL,
             is_activated INTEGER DEFAULT 0,
             subscription_start TEXT,
-            subscription_end TEXT
+            subscription_end TEXT,
+            security_question TEXT,
+            security_answer TEXT
         );
         CREATE TABLE IF NOT EXISTS farm_dates (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -243,6 +250,10 @@ def init_db():
         conn.execute("ALTER TABLE users ADD COLUMN subscription_start TEXT")
     if "subscription_end" not in cols:
         conn.execute("ALTER TABLE users ADD COLUMN subscription_end TEXT")
+    if "security_question" not in cols:
+        conn.execute("ALTER TABLE users ADD COLUMN security_question TEXT")
+    if "security_answer" not in cols:
+        conn.execute("ALTER TABLE users ADD COLUMN security_answer TEXT")
     conn.commit()
     conn.close()
 
@@ -484,6 +495,21 @@ translations = {
         "reset_pass_mismatch": "&#x274c; Passwords do not match!",
         "reset_pass_empty": "&#x274c; Please fill all fields!",
         "back_to_login": "&#x2190; Back to Login",
+        "sec_question": "Security Question",
+        "sec_answer": "Security Answer",
+        "sec_question_hint": "Choose a question only you know the answer to",
+        "sec_answer_hint": "Your secret answer (case sensitive)",
+        "verify_question": "Answer Security Question",
+        "verify_question_hint": "Answer the question you set during signup",
+        "wrong_answer": "&#x274c; Wrong answer! Try again.",
+        "questions": [
+            "What is your mother's maiden name?",
+            "What was the name of your first pet?",
+            "What is your favorite color?",
+            "What city were you born in?",
+            "What is your favorite food?",
+            "What is your favorite sports team?"
+        ],
     },
     "Swahili": {
         "title": "MFUGAJI KWANZA", "subtitle": "Mfumo wa Kisasa wa Usimamizi wa Kuku",
@@ -571,6 +597,21 @@ translations = {
         "reset_pass_mismatch": "&#x274c; Password hazifanani!",
         "reset_pass_empty": "&#x274c; Tafadhali jaza sehemu zote!",
         "back_to_login": "&#x2190; Rudi Kwenye Kuingia",
+        "sec_question": "Swali la Usalama",
+        "sec_answer": "Jibu la Usalama",
+        "sec_question_hint": "Chagua swali ambalo wewe pekee ndio unajua jibu lake",
+        "sec_answer_hint": "Jibu lako la siri (andika sawa sawa)",
+        "verify_question": "Jibu Swali la Usalama",
+        "verify_question_hint": "Jibu swali uliloweka wakati wa kujiandikisha",
+        "wrong_answer": "&#x274c; Jibu si sahihi! Jaribu tena.",
+        "questions": [
+            "Jina la mama yako ni nani?",
+            "Jina la mnyama wako wa kwanza ni nani?",
+            "Rangi yako favorite ni gani?",
+            "Mji uliozaliwa ni gani?",
+            "Chakula chako favorite ni kipi?",
+            "Timu yako favorite ya michezo ni gani?"
+        ],
     }
 }
 
@@ -688,15 +729,17 @@ if not st.session_state.logged_in:
                 reg_name = st.text_input("&#x1f464; " + t["full_name"], placeholder="Mfano: Juma Mohamedi")
                 reg_user = st.text_input("&#x1f465; " + t["username"], placeholder="Mfano: juma_2026")
                 reg_pass = st.text_input("&#x1f511; " + t["password"], type="password", placeholder=t["pass_placeholder"])
+                sec_q = st.selectbox("&#x1f512; " + t["sec_question"], t["questions"], placeholder=t["sec_question_hint"])
+                sec_a = st.text_input("&#x1f511; " + t["sec_answer"], placeholder=t["sec_answer_hint"])
                 if st.form_submit_button("&#x2705; " + t["signup_btn"]):
                     username_clean = reg_user.strip()
-                    if reg_name and username_clean and reg_pass:
+                    if reg_name and username_clean and reg_pass and sec_q and sec_a:
                         try:
                             existing = db_get_user_by_username(username_clean)
                             if existing:
                                 st.error("&#x274c; Jina la mtumiaji tayari lipo / Username already exists.")
                             else:
-                                user_id = db_insert_user(username_clean, reg_pass, 0)
+                                user_id = db_insert_user(username_clean, reg_pass, 0, sec_q, sec_a.strip())
                                 st.session_state.current_user_id = user_id
                                 st.session_state.current_username = username_clean
                                 st.session_state.logged_in = True
@@ -716,37 +759,96 @@ if not st.session_state.logged_in:
                 st.rerun()
 
         elif st.session_state.auth_screen == "reset_password":
-            st.markdown("""<div class="auth-card">""", unsafe_allow_html=True)
-            st.markdown(f"""<div style="text-align:center; margin-bottom:20px;">
-                <span style="font-size:48px;">&#x1f511;</span>
-                <h3 style="color:#FFD700; margin:8px 0 2px 0; font-size:24px; font-weight:800;">{t["reset_pass_title"]}</h3>
-            </div>""", unsafe_allow_html=True)
-            rp_user = st.text_input("&#x1f464; " + t["username"], placeholder="Mfano: juma, mama_maria", key="rp_user")
-            rp_pass1 = st.text_input("&#x1f511; " + t["password"] + " (Mpya)", type="password", placeholder=t["pass_placeholder"], key="rp_pass1")
-            rp_pass2 = st.text_input("&#x1f511; " + "Rudia Password Mpya", type="password", placeholder="Andika tena password", key="rp_pass2")
-            if st.button("&#x2705; " + t["reset_pass_btn"], type="primary", use_container_width=True):
-                u = rp_user.strip()
-                p1 = rp_pass1.strip()
-                p2 = rp_pass2.strip()
-                if u and p1 and p2:
-                    user = db_get_user_by_username(u)
-                    if user:
+            if "rp_step" not in st.session_state:
+                st.session_state.rp_step = "verify_user"
+            if st.session_state.rp_step == "verify_user":
+                st.markdown("""<div class="auth-card">""", unsafe_allow_html=True)
+                st.markdown(f"""<div style="text-align:center; margin-bottom:20px;">
+                    <span style="font-size:48px;">&#x1f50d;</span>
+                    <h3 style="color:#FFD700; margin:8px 0 2px 0; font-size:24px; font-weight:800;">{t["reset_pass_title"]}</h3>
+                </div>""", unsafe_allow_html=True)
+                rp_user = st.text_input("&#x1f464; " + t["username"], placeholder="Mfano: juma, mama_maria", key="rp_user")
+                if st.button("&#x1f50d; " + t["verify_question"], type="primary", use_container_width=True):
+                    u = rp_user.strip()
+                    if u:
+                        user = db_get_user_by_username(u)
+                        if user and user.get("security_question"):
+                            st.session_state.rp_user_id = user["id"]
+                            st.session_state.rp_question = user["security_question"]
+                            st.session_state.rp_answer = user["security_answer"]
+                            st.session_state.rp_step = "verify_answer"
+                            st.rerun()
+                        else:
+                            st.error(t["reset_user_not_found"])
+                    else:
+                        st.error(t["reset_pass_empty"])
+                st.markdown("</div>", unsafe_allow_html=True)
+                if st.button("&#x2190; "+t["back_to_login"], key="btn_back_to_login", use_container_width=True):
+                    st.session_state.rp_step = "verify_user"
+                    st.session_state.pop("rp_user_id", None)
+                    st.session_state.pop("rp_question", None)
+                    st.session_state.pop("rp_answer", None)
+                    st.session_state.auth_screen = "login"
+                    st.rerun()
+            elif st.session_state.rp_step == "verify_answer":
+                st.markdown("""<div class="auth-card">""", unsafe_allow_html=True)
+                st.markdown(f"""<div style="text-align:center; margin-bottom:20px;">
+                    <span style="font-size:48px;">&#x1f511;</span>
+                    <h3 style="color:#FFD700; margin:8px 0 2px 0; font-size:24px; font-weight:800;">{t["verify_question"]}</h3>
+                </div>""", unsafe_allow_html=True)
+                st.markdown(f'<p style="color:#FFF; font-size:16px; font-weight:600; text-align:center; margin-bottom:12px;">{st.session_state.rp_question}</p>', unsafe_allow_html=True)
+                rp_answer_input = st.text_input("&#x1f511; " + t["sec_answer"], placeholder=t["sec_answer_hint"], key="rp_answer_input")
+                col_a1, col_a2 = st.columns(2)
+                with col_a1:
+                    if st.button("&#x2190; " + t["back_to_login"], use_container_width=True):
+                        st.session_state.rp_step = "verify_user"
+                        st.session_state.pop("rp_user_id", None)
+                        st.session_state.pop("rp_question", None)
+                        st.session_state.pop("rp_answer", None)
+                        st.session_state.auth_screen = "login"
+                        st.rerun()
+                with col_a2:
+                    if st.button("&#x2705; " + t["verify_question"], type="primary", use_container_width=True):
+                        if rp_answer_input.strip() == st.session_state.rp_answer:
+                            st.session_state.rp_step = "new_password"
+                            st.rerun()
+                        else:
+                            st.error(t["wrong_answer"])
+                st.markdown("</div>", unsafe_allow_html=True)
+            elif st.session_state.rp_step == "new_password":
+                st.markdown("""<div class="auth-card">""", unsafe_allow_html=True)
+                st.markdown(f"""<div style="text-align:center; margin-bottom:20px;">
+                    <span style="font-size:48px;">&#x1f511;</span>
+                    <h3 style="color:#00E676; margin:8px 0 2px 0; font-size:24px; font-weight:800;">{t["reset_pass_title"]}</h3>
+                </div>""", unsafe_allow_html=True)
+                rp_pass1 = st.text_input("&#x1f511; " + t["password"] + " (Mpya)", type="password", placeholder=t["pass_placeholder"], key="rp_pass1")
+                rp_pass2 = st.text_input("&#x1f511; " + "Rudia Password Mpya", type="password", placeholder="Andika tena password", key="rp_pass2")
+                if st.button("&#x2705; " + t["reset_pass_btn"], type="primary", use_container_width=True):
+                    p1 = rp_pass1.strip()
+                    p2 = rp_pass2.strip()
+                    if p1 and p2:
                         if p1 == p2:
-                            db_update_user(user["id"], {"password": p1})
+                            db_update_user(st.session_state.rp_user_id, {"password": p1})
                             st.success(t["reset_success"])
                             time.sleep(1.5)
+                            st.session_state.rp_step = "verify_user"
+                            st.session_state.pop("rp_user_id", None)
+                            st.session_state.pop("rp_question", None)
+                            st.session_state.pop("rp_answer", None)
                             st.session_state.auth_screen = "login"
                             st.rerun()
                         else:
                             st.error(t["reset_pass_mismatch"])
                     else:
-                        st.error(t["reset_user_not_found"])
-                else:
-                    st.error(t["reset_pass_empty"])
-            st.markdown("</div>", unsafe_allow_html=True)
-            if st.button("&#x2190; "+t["back_to_login"], key="btn_back_to_login", use_container_width=True):
-                st.session_state.auth_screen = "login"
-                st.rerun()
+                        st.error(t["reset_pass_empty"])
+                st.markdown("</div>", unsafe_allow_html=True)
+                if st.button("&#x2190; "+t["back_to_login"], key="btn_back_login2", use_container_width=True):
+                    st.session_state.rp_step = "verify_user"
+                    st.session_state.pop("rp_user_id", None)
+                    st.session_state.pop("rp_question", None)
+                    st.session_state.pop("rp_answer", None)
+                    st.session_state.auth_screen = "login"
+                    st.rerun()
 
 # ==========================================
 # SEHEMU YA 2: BANGO LA MALIPO KUPITIA SELAR
