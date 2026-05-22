@@ -34,3 +34,12 @@ CREATE TABLE IF NOT EXISTS sales_records (
     price DOUBLE PRECISION NOT NULL,
     revenue DOUBLE PRECISION NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS rounds (
+    id BIGSERIAL PRIMARY KEY,
+    user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    round_number INTEGER NOT NULL,
+    archived_at TEXT NOT NULL,
+    summary_json TEXT NOT NULL,
+    UNIQUE(user_id, round_number)
+);
