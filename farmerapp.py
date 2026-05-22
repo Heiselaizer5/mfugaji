@@ -576,12 +576,15 @@ st.markdown(f"""
     .dashboard-card {{ background: linear-gradient(145deg,#1a1a2e,#16213e) !important; border: 1px solid #2a2a4a !important; border-radius: 20px !important; padding: 28px !important; text-align: center; box-shadow: 0 8px 32px rgba(0,0,0,0.4); transition: transform 0.2s; }}
     
     label[data-testid="stWidgetLabel"] p {{ color: #DDD !important; font-weight: 600 !important; font-size: 14px !important; }}
-    input, input[type="text"], input[type="password"] {{ background-color: #0a0a1a !important; color: #FFF !important; border: 1px solid #3a3a5a !important; border-radius: 12px !important; padding: 12px 16px !important; font-weight: 500 !important; font-size: 15px !important; }}
-    input:focus {{ border-color: #00E676 !important; box-shadow: 0 0 0 2px rgba(0,230,118,0.15) !important; }}
+    input, input[type="text"], input[type="password"], input[type="number"], input[type="date"], input[type="email"], input[type="tel"], input[type="url"], input[type="search"], textarea, select, .stTextInput, .stNumberInput, .stDateInput, .stTextArea, [data-testid="stTextInput"], [data-testid="stNumberInput"], [data-testid="stDateInput"] {{ background-color: #0a0a1a !important; color: #FFF !important; border: 1px solid #3a3a5a !important; border-radius: 12px !important; padding: 12px 16px !important; font-weight: 500 !important; font-size: 15px !important; }}
+    input:focus, input[type="text"]:focus, input[type="password"]:focus, input[type="number"]:focus {{ border-color: #00E676 !important; box-shadow: 0 0 0 2px rgba(0,230,118,0.15) !important; }}
     ::placeholder {{ color: #666 !important; font-size: 13px !important; }}
     
-    div.stButton > button {{ background: linear-gradient(135deg,#00E676,#00c853) !important; color: #000 !important; border-radius: 14px !important; border: none !important; padding: 14px 24px !important; font-weight: 800 !important; font-size: 16px !important; width: 100%; transition: all 0.2s; box-shadow: 0 4px 15px rgba(0,230,118,0.3) !important; }}
-    div.stButton > button:hover {{ transform: translateY(-2px) !important; box-shadow: 0 6px 20px rgba(0,230,118,0.5) !important; }}
+    div.stButton > button {{ background: linear-gradient(135deg,#00E676,#00c853) !important; color: #000 !important; border-radius: 14px !important; border: none !important; padding: 14px 24px !important; font-weight: 800 !important; font-size: 16px !important; width: 100%; transition: all 0.2s; box-shadow: 0 4px 15px rgba(0,230,118,0.3) !important; letter-spacing: 0.5px !important; }}
+    div.stButton > button:hover {{ transform: translateY(-2px) !important; box-shadow: 0 6px 25px rgba(0,230,118,0.6) !important; }}
+    div.stButton > button:active {{ transform: translateY(0px) !important; }}
+    div.stButton > button[kind="primary"] {{ background: linear-gradient(135deg,#00E676,#00c853) !important; box-shadow: 0 4px 20px rgba(0,230,118,0.5) !important; }}
+    div.stButton > button[kind="primary"]:hover {{ box-shadow: 0 6px 30px rgba(0,230,118,0.8) !important; }}
     
     .auth-switch {{ color: #888; text-align: center; margin-top: 16px; font-size: 14px; }}
     .auth-switch a {{ color: #00E676; text-decoration: none; font-weight: 600; cursor: pointer; }}
