@@ -578,6 +578,7 @@ st.markdown(f"""
     label[data-testid="stWidgetLabel"] p {{ color: #DDD !important; font-weight: 600 !important; font-size: 14px !important; }}
     input, input[type="text"], input[type="password"], input[type="number"], input[type="date"], input[type="email"], input[type="tel"], input[type="url"], input[type="search"], textarea, select, .stTextInput, .stNumberInput, .stDateInput, .stTextArea, [data-testid="stTextInput"], [data-testid="stNumberInput"], [data-testid="stDateInput"] {{ background-color: #0a0a1a !important; color: #FFF !important; border: 1px solid #3a3a5a !important; border-radius: 12px !important; padding: 12px 16px !important; font-weight: 500 !important; font-size: 15px !important; }}
     input:focus, input[type="text"]:focus, input[type="password"]:focus, input[type="number"]:focus {{ border-color: #00E676 !important; box-shadow: 0 0 0 2px rgba(0,230,118,0.15) !important; }}
+    [data-baseweb="input"] input, [data-baseweb="input"] textarea {{ background-color: #0a0a1a !important; color: #FFF !important; }}
     ::placeholder {{ color: #666 !important; font-size: 13px !important; }}
     
     div.stButton > button {{ background: linear-gradient(135deg,#00E676,#00c853) !important; color: #000 !important; border-radius: 14px !important; border: none !important; padding: 14px 24px !important; font-weight: 800 !important; font-size: 16px !important; width: 100%; transition: all 0.2s; box-shadow: 0 4px 15px rgba(0,230,118,0.3) !important; letter-spacing: 0.5px !important; }}
