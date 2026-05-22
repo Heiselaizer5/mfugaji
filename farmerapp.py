@@ -572,7 +572,7 @@ st.markdown(f"""
     .brand-subtitle {{ font-size: 13px; color: #00E676; display: block; margin-top: -5px; font-weight: 600; letter-spacing:1px; }}
     
     /* Auth & Dashboard Cards */
-    .auth-card { background: linear-gradient(145deg,#1a1a2e,#16213e) !important; border: 1px solid #2a2a4a !important; border-radius: 20px !important; padding: 36px 32px !important; box-shadow: 0 8px 32px rgba(0,0,0,0.4) !important; }
+    .auth-card {{ background: linear-gradient(145deg,#1a1a2e,#16213e) !important; border: 1px solid #2a2a4a !important; border-radius: 20px !important; padding: 36px 32px !important; box-shadow: 0 8px 32px rgba(0,0,0,0.4) !important; }}
     .dashboard-card {{ background: linear-gradient(145deg,#1a1a2e,#16213e) !important; border: 1px solid #2a2a4a !important; border-radius: 20px !important; padding: 28px !important; text-align: center; box-shadow: 0 8px 32px rgba(0,0,0,0.4); transition: transform 0.2s; }}
     
     label[data-testid="stWidgetLabel"] p {{ color: #DDD !important; font-weight: 600 !important; font-size: 14px !important; }}
@@ -582,7 +582,7 @@ st.markdown(f"""
     .st-bb, .st-bc, .st-bd, .st-be, .st-bf, .st-bg {{ background-color: #0a0a1a !important; color: #FFF !important; }}
     ::placeholder {{ color: #666 !important; font-size: 13px !important; }}
     
-    .auth-card input { margin-bottom: 4px !important; }
+    .auth-card input {{ margin-bottom: 4px !important; }}
     div.stButton > button {{ border-radius: 14px !important; padding: 12px 20px !important; font-weight: 700 !important; font-size: 15px !important; width: 100%; transition: all 0.2s; letter-spacing: 0.5px !important; border: 1px solid #3a3a5a !important; background: transparent !important; color: #CCC !important; }}
     div.stButton > button:hover {{ border-color: #00E676 !important; color: #FFF !important; }}
     .auth-card div.stButton > button {{ background: linear-gradient(135deg,#00E676,#00c853) !important; color: #000 !important; border: none !important; box-shadow: 0 4px 15px rgba(0,230,118,0.3) !important; font-weight: 800 !important; font-size: 16px !important; }}
