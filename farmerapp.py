@@ -137,7 +137,10 @@ def db_insert_sale_record(user_id, dk, rec):
 def db_archive_round(user_id, round_number, summary_json):
     now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     if use_supabase:
-        sb.table("rounds").insert({"user_id": user_id, "round_number": round_number, "archived_at": now_str, "summary_json": summary_json}).execute()
+        try:
+            sb.table("rounds").insert({"user_id": user_id, "round_number": round_number, "archived_at": now_str, "summary_json": summary_json}).execute()
+        except:
+            pass
         return
     conn = get_db()
     conn.execute("INSERT INTO rounds (user_id, round_number, archived_at, summary_json) VALUES (?, ?, ?, ?)",
@@ -147,8 +150,11 @@ def db_archive_round(user_id, round_number, summary_json):
 
 def db_get_rounds(user_id):
     if use_supabase:
-        result = sb.table("rounds").select("*").eq("user_id", user_id).order("round_number", desc=True).execute()
-        return result.data if result.data else []
+        try:
+            result = sb.table("rounds").select("*").eq("user_id", user_id).order("round_number", desc=True).execute()
+            return result.data if result.data else []
+        except:
+            return []
     conn = get_db()
     rows = conn.execute("SELECT * FROM rounds WHERE user_id = ? ORDER BY round_number DESC", (user_id,)).fetchall()
     conn.close()
@@ -156,8 +162,11 @@ def db_get_rounds(user_id):
 
 def db_get_round(user_id, round_number):
     if use_supabase:
-        result = sb.table("rounds").select("*").eq("user_id", user_id).eq("round_number", round_number).execute()
-        return result.data[0] if result.data else None
+        try:
+            result = sb.table("rounds").select("*").eq("user_id", user_id).eq("round_number", round_number).execute()
+            return result.data[0] if result.data else None
+        except:
+            return None
     conn = get_db()
     row = conn.execute("SELECT * FROM rounds WHERE user_id = ? AND round_number = ?", (user_id, round_number)).fetchone()
     conn.close()
@@ -165,7 +174,10 @@ def db_get_round(user_id, round_number):
 
 def db_delete_round(user_id, round_number):
     if use_supabase:
-        sb.table("rounds").delete().eq("user_id", user_id).eq("round_number", round_number).execute()
+        try:
+            sb.table("rounds").delete().eq("user_id", user_id).eq("round_number", round_number).execute()
+        except:
+            pass
         return
     conn = get_db()
     conn.execute("DELETE FROM rounds WHERE user_id = ? AND round_number = ?", (user_id, round_number))
