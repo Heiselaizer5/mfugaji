@@ -572,7 +572,7 @@ st.markdown(f"""
     .brand-subtitle {{ font-size: 13px; color: #00E676; display: block; margin-top: -5px; font-weight: 600; letter-spacing:1px; }}
     
     /* Auth & Dashboard Cards */
-    .auth-card, [data-testid="stForm"], .stForm {{ background: linear-gradient(145deg,#1a1a2e,#16213e) !important; border: 1px solid #2a2a4a !important; border-radius: 20px !important; padding: 32px !important; box-shadow: 0 8px 32px rgba(0,0,0,0.4) !important; }}
+    .auth-card { background: linear-gradient(145deg,#1a1a2e,#16213e) !important; border: 1px solid #2a2a4a !important; border-radius: 20px !important; padding: 36px 32px !important; box-shadow: 0 8px 32px rgba(0,0,0,0.4) !important; }
     .dashboard-card {{ background: linear-gradient(145deg,#1a1a2e,#16213e) !important; border: 1px solid #2a2a4a !important; border-radius: 20px !important; padding: 28px !important; text-align: center; box-shadow: 0 8px 32px rgba(0,0,0,0.4); transition: transform 0.2s; }}
     
     label[data-testid="stWidgetLabel"] p {{ color: #DDD !important; font-weight: 600 !important; font-size: 14px !important; }}
@@ -582,17 +582,18 @@ st.markdown(f"""
     .st-bb, .st-bc, .st-bd, .st-be, .st-bf, .st-bg {{ background-color: #0a0a1a !important; color: #FFF !important; }}
     ::placeholder {{ color: #666 !important; font-size: 13px !important; }}
     
-    div.stButton > button {{ background: linear-gradient(135deg,#00E676,#00c853) !important; color: #000 !important; border-radius: 14px !important; border: none !important; padding: 14px 24px !important; font-weight: 800 !important; font-size: 16px !important; width: 100%; transition: all 0.2s; box-shadow: 0 4px 15px rgba(0,230,118,0.3) !important; letter-spacing: 0.5px !important; }}
-    div.stButton > button:hover {{ transform: translateY(-2px) !important; box-shadow: 0 6px 25px rgba(0,230,118,0.6) !important; }}
-    div.stButton > button:active {{ transform: translateY(0px) !important; }}
-    div.stButton > button[kind="primary"] {{ background: linear-gradient(135deg,#00E676,#00c853) !important; box-shadow: 0 4px 20px rgba(0,230,118,0.5) !important; }}
-    div.stButton > button[kind="primary"]:hover {{ box-shadow: 0 6px 30px rgba(0,230,118,0.8) !important; }}
+    .auth-card input { margin-bottom: 4px !important; }
+    div.stButton > button {{ border-radius: 14px !important; padding: 12px 20px !important; font-weight: 700 !important; font-size: 15px !important; width: 100%; transition: all 0.2s; letter-spacing: 0.5px !important; border: 1px solid #3a3a5a !important; background: transparent !important; color: #CCC !important; }}
+    div.stButton > button:hover {{ border-color: #00E676 !important; color: #FFF !important; }}
+    .auth-card div.stButton > button {{ background: linear-gradient(135deg,#00E676,#00c853) !important; color: #000 !important; border: none !important; box-shadow: 0 4px 15px rgba(0,230,118,0.3) !important; font-weight: 800 !important; font-size: 16px !important; }}
+    .auth-card div.stButton > button:hover {{ transform: translateY(-2px) !important; box-shadow: 0 6px 25px rgba(0,230,118,0.6) !important; }}
+    .auth-card div.stButton > button:active {{ transform: translateY(0px) !important; }}
     
     .auth-switch {{ color: #888; text-align: center; margin-top: 16px; font-size: 14px; }}
     .auth-switch a {{ color: #00E676; text-decoration: none; font-weight: 600; cursor: pointer; }}
     .auth-switch a:hover {{ color: #00FF5E; text-decoration: underline; }}
     [data-testid="stFormSubmitInstruction"], .stFormSubmitInstruction {{ display: none !important; visibility: hidden !important; height: 0 !important; overflow: hidden !important; }}
-    .auth-card .stButton {{ margin-top: 12px !important; }}
+    .auth-card .stButton {{ margin-top: 8px !important; }}
     </style>
     """, unsafe_allow_html=True)
 
@@ -605,15 +606,14 @@ with col_title:
 with col_lang:
     st.markdown(f'<div style="text-align:right; margin-bottom:2px;"><span style="color:#AAA; font-size:11px; font-weight:600;">{t["choose_language"]}</span></div>', unsafe_allow_html=True)
     lang_sw = st.session_state.language == "Swahili"
-    st.markdown("""<style>button[kind="primary"],button[kind="secondary"]{padding:2px 6px!important;font-size:11px!important;border-radius:4px!important;min-height:0!important;line-height:1!important;}</style>""", unsafe_allow_html=True)
     col_a, col_b = st.columns(2)
     with col_a:
-        if st.button("&#x1f1f9;&#x1f1ff; Sw", key="lang_sw", use_container_width=True, type="primary" if lang_sw else "secondary"):
+        if st.button("&#x1f1f9;&#x1f1ff; Sw", key="lang_sw", use_container_width=True):
             if st.session_state.language != "Swahili":
                 st.session_state.language = "Swahili"
                 st.rerun()
     with col_b:
-        if st.button("&#x1f1ec;&#x1f1e7; En", key="lang_en", use_container_width=True, type="primary" if not lang_sw else "secondary"):
+        if st.button("&#x1f1ec;&#x1f1e7; En", key="lang_en", use_container_width=True):
             if st.session_state.language != "English":
                 st.session_state.language = "English"
                 st.rerun()
@@ -655,7 +655,7 @@ if not st.session_state.logged_in:
                 else:
                     st.error(t["error_msg"])
             st.markdown("</div>", unsafe_allow_html=True)
-            if st.button("&#x1f4dd; "+t["go_to_signup"], key="go_to_signup_btn", use_container_width=True):
+            if st.button("&#x1f4dd; "+t["go_to_signup"], key="auth_switch_signup", use_container_width=True):
                 st.session_state.auth_screen = "signup"
                 st.rerun()
 
@@ -691,7 +691,7 @@ if not st.session_state.logged_in:
                 else:
                     st.error(t["error_fields"])
             st.markdown("</div>", unsafe_allow_html=True)
-            if st.button("&#x1f511; "+t["go_to_login"], key="go_to_login_btn", use_container_width=True):
+            if st.button("&#x1f511; "+t["go_to_login"], key="auth_switch_login", use_container_width=True):
                 st.session_state.auth_screen = "login"
                 st.rerun()
 
