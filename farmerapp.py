@@ -597,6 +597,8 @@ st.markdown(f"""
     header {{ visibility: hidden; }}
     [data-testid="stToolbar"] {{ display: none !important; }}
     [data-testid="stDecoration"] {{ display: none !important; }}
+    [data-testid="stStatusWidget"] {{ display: none !important; }}
+    [data-testid="stBottom"] {{ display: none !important; }}
     </style>
     """, unsafe_allow_html=True)
 
