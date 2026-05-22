@@ -4,6 +4,3 @@ backgroundColor = "#0a0a1a"
 secondaryBackgroundColor = "#1a1a2e"
 textColor = "#FFFFFF"
 font = "sans serif"
-
-[client]
-toolbarMode = "minimal"
