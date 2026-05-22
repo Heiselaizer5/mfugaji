@@ -134,6 +134,55 @@ def db_insert_sale_record(user_id, dk, rec):
     conn.commit()
     conn.close()
 
+def db_archive_round(user_id, round_number, summary_json):
+    now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    if use_supabase:
+        sb.table("rounds").insert({"user_id": user_id, "round_number": round_number, "archived_at": now_str, "summary_json": summary_json}).execute()
+        return
+    conn = get_db()
+    conn.execute("INSERT INTO rounds (user_id, round_number, archived_at, summary_json) VALUES (?, ?, ?, ?)",
+                 (user_id, round_number, now_str, summary_json))
+    conn.commit()
+    conn.close()
+
+def db_get_rounds(user_id):
+    if use_supabase:
+        result = sb.table("rounds").select("*").eq("user_id", user_id).order("round_number", desc=True).execute()
+        return result.data if result.data else []
+    conn = get_db()
+    rows = conn.execute("SELECT * FROM rounds WHERE user_id = ? ORDER BY round_number DESC", (user_id,)).fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+def db_get_round(user_id, round_number):
+    if use_supabase:
+        result = sb.table("rounds").select("*").eq("user_id", user_id).eq("round_number", round_number).execute()
+        return result.data[0] if result.data else None
+    conn = get_db()
+    row = conn.execute("SELECT * FROM rounds WHERE user_id = ? AND round_number = ?", (user_id, round_number)).fetchone()
+    conn.close()
+    return dict(row) if row else None
+
+def db_delete_round(user_id, round_number):
+    if use_supabase:
+        sb.table("rounds").delete().eq("user_id", user_id).eq("round_number", round_number).execute()
+        return
+    conn = get_db()
+    conn.execute("DELETE FROM rounds WHERE user_id = ? AND round_number = ?", (user_id, round_number))
+    conn.commit()
+    conn.close()
+
+def db_clear_user_data(user_id):
+    if use_supabase:
+        sb.table("farm_dates").delete().eq("user_id", user_id).execute()
+        sb.table("sales_records").delete().eq("user_id", user_id).execute()
+        return
+    conn = get_db()
+    conn.execute("DELETE FROM farm_dates WHERE user_id = ?", (user_id,))
+    conn.execute("DELETE FROM sales_records WHERE user_id = ?", (user_id,))
+    conn.commit()
+    conn.close()
+
 def init_db():
     conn = get_db()
     conn.executescript("""
@@ -167,6 +216,14 @@ def init_db():
             qty INTEGER NOT NULL,
             price REAL NOT NULL,
             revenue REAL NOT NULL
+        );
+        CREATE TABLE IF NOT EXISTS rounds (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            round_number INTEGER NOT NULL,
+            archived_at TEXT NOT NULL,
+            summary_json TEXT NOT NULL,
+            UNIQUE(user_id, round_number)
         );
     """)
     cols = [row[1] for row in conn.execute("PRAGMA table_info(users)").fetchall()]
@@ -243,6 +300,17 @@ def save_data():
         for rec in entry.get("sales_records", []):
             db_insert_sale_record(uid, dk, rec)
 
+def load_rounds():
+    if "current_user_id" not in st.session_state or st.session_state.current_user_id is None:
+        return
+    uid = st.session_state.current_user_id
+    rows = db_get_rounds(uid)
+    st.session_state.rounds_list = rows
+    if rows:
+        st.session_state.current_round = max(r["round_number"] for r in rows) + 1
+    else:
+        st.session_state.current_round = 1
+
 
 
 # --- Page Configuration ---
@@ -276,6 +344,14 @@ if "current_username" not in st.session_state:
     st.session_state.current_username = None
 if "farm_database" not in st.session_state:
     st.session_state.farm_database = {}
+if "current_round" not in st.session_state:
+    st.session_state.current_round = 1
+if "rounds_list" not in st.session_state:
+    st.session_state.rounds_list = []
+if "viewing_round" not in st.session_state:
+    st.session_state.viewing_round = None
+if "confirm_delete_round" not in st.session_state:
+    st.session_state.confirm_delete_round = None
 
 init_db()
 
@@ -372,6 +448,20 @@ translations = {
         "choose_language": "&#x1f310; Choose Language",
         "pass_placeholder": "Enter your password",
         "selar_howto": "1. Click \"BOFYA HAPA KUFANYA MALIPO\"\n2. On Selar, click \"Continue to Payment\"\n3. Choose: Tigo Pesa / Airtel / Halo / Card\n4. Enter phone -> click \"Pay Now\"\n5. Confirm with PIN on your phone\n6. You'll be redirected back automatically\n7. Account activates automatically",
+        "current_round": "Current Round",
+        "move_to_next_round": "Move to Next Round",
+        "round_history": "Round History",
+        "round_label": "Round {}",
+        "no_rounds": "No previous rounds yet.",
+        "no_rounds_hint": "Click 'Move to Next Round' to archive the current batch.",
+        "view_round": "View",
+        "delete_round": "Delete",
+        "confirm_delete_round": "Are you sure?",
+        "round_archived": "Round archived! Starting new round...",
+        "round_deleted": "Round deleted!",
+        "viewing_round_title": "Viewing Round {}",
+        "viewing_back": "Back to Dashboard",
+        "archived_at": "Archived on",
     },
     "Swahili": {
         "title": "MFUGAJI KWANZA", "subtitle": "Mfumo wa Kisasa wa Usimamizi wa Kuku",
@@ -437,6 +527,20 @@ translations = {
         "choose_language": "&#x1f310; Chagua Lugha",
         "pass_placeholder": "Weka neno la siri hapa",
         "selar_howto": "1. Bonyeza \"BOFYA HAPA KUFANYA MALIPO\"\n2. Kwenye Selar, bonyeza \"Continue to Payment\"\n3. Chagua: Tigo Pesa / Airtel / Halo / Card\n4. Weka namba -> bonyeza \"Pay Now\"\n5. Thibitisha kwa PIN simu yako\n6. Utarudishwa kwenye app moja kwa moja\n7. Akaunti itafunguka kiotomatiki",
+        "current_round": "Awamu ya Sasa",
+        "move_to_next_round": "Nenda Awamu Inayofuata",
+        "round_history": "Kumbukumbu za Awamu",
+        "round_label": "Awamu {}",
+        "no_rounds": "Hakuna awamu za awali bado.",
+        "no_rounds_hint": "Bonyeza 'Nenda Awamu Inayofuata' kuhifadhi awamu hii.",
+        "view_round": "Angalia",
+        "delete_round": "Futa",
+        "confirm_delete_round": "Una uhakika?",
+        "round_archived": "Awamu imehifadhiwa! Kuanza awamu mpya...",
+        "round_deleted": "Awamu imefutwa!",
+        "viewing_round_title": "Kuangalia Awamu {}",
+        "viewing_back": "Rudi Kwenye Dashibodi",
+        "archived_at": "Ilihifadhiwa tarehe",
     }
 }
 
@@ -519,6 +623,7 @@ if not st.session_state.logged_in:
                         st.session_state.logged_in = True
                         st.session_state.is_activated = subscription_active
                         load_data()
+                        load_rounds()
                         
                         if subscription_active:
                             st.success(t["login_success"])
@@ -557,6 +662,7 @@ if not st.session_state.logged_in:
                                 st.session_state.logged_in = True
                                 st.session_state.is_activated = False
                                 load_data()
+                                load_rounds()
                                 st.success(t["success_msg"])
                                 time.sleep(1.5)
                                 st.rerun()
@@ -725,6 +831,31 @@ else:
             <h2 style="color:#FFF; margin:0; font-size:30px; font-weight:800;">{t["welcome"]}</h2>
         </div>""", unsafe_allow_html=True)
 
+        col_round, col_next = st.columns([1, 1])
+        with col_round:
+            st.markdown(f"""
+            <div style="background:linear-gradient(135deg,#0a1628,#111827); border-radius:12px; padding:12px 20px; margin-bottom:18px; border:1px solid #2a2a4a;">
+                <span style="color:#888; font-size:12px;">{t['current_round']}</span>
+                <span style="color:#00E676; font-size:22px; font-weight:800; margin-left:8px;">{st.session_state.current_round}</span>
+            </div>
+            """, unsafe_allow_html=True)
+        with col_next:
+            if st.button("&#x1f504; " + t["move_to_next_round"], use_container_width=True):
+                if st.session_state.farm_database:
+                    import json
+                    save_data()
+                    summary_json = json.dumps(st.session_state.farm_database)
+                    db_archive_round(st.session_state.current_user_id, st.session_state.current_round, summary_json)
+                    db_clear_user_data(st.session_state.current_user_id)
+                    st.session_state.farm_database = {}
+                    st.session_state.current_round += 1
+                    load_rounds()
+                    st.success(t["round_archived"])
+                    time.sleep(1.0)
+                    st.rerun()
+                else:
+                    st.warning("No data to archive. Hakuna data ya kuhifadhi.")
+
         col1, col2 = st.columns(2)
         with col1:
             st.markdown(f"""
@@ -815,6 +946,55 @@ else:
                 st.session_state.sub_view = "kumbukumbu_mauzo"
                 st.session_state.edit_sale_key = None
                 st.rerun()
+
+        # --- Rounds History ---
+        st.markdown("<hr style='border-color:#2a2a3a; margin:20px 0;'>", unsafe_allow_html=True)
+        st.markdown(f"""<div style="text-align:center; margin-bottom:16px;">
+            <span style="color:#FFD700; font-size:20px; font-weight:800;">&#x1f4e6; {t['round_history']}</span>
+        </div>""", unsafe_allow_html=True)
+
+        if st.session_state.rounds_list:
+            for rnd in st.session_state.rounds_list:
+                rn = rnd["round_number"]
+                rn_date = rnd["archived_at"][:10] if rnd.get("archived_at") else ""
+                is_confirm = st.session_state.confirm_delete_round == rn
+                st.markdown(f"""
+                <div style="background:#12121a; border-radius:14px; padding:12px 16px; margin-bottom:8px; border:1px solid #2a2a3a; display:flex; justify-content:space-between; align-items:center;">
+                    <div>
+                        <span style="color:#FFD700; font-weight:800; font-size:16px;">{t['round_label'].format(rn)}</span>
+                        <span style="color:#666; font-size:12px; margin-left:10px;">&#x1f4c5; {rn_date}</span>
+                    </div>
+                    <div style="display:flex; gap:6px;">
+                        <button onclick="alert('Not functional via HTML')" style="display:none;"></button>
+                """, unsafe_allow_html=True)
+                c_view, c_del = st.columns([1, 1])
+                with c_view:
+                    if st.button("&#x1f441; " + t["view_round"], key=f"view_rnd_{rn}", use_container_width=True):
+                        st.session_state.viewing_round = rn
+                        st.session_state.sub_view = "viewing_round"
+                        st.rerun()
+                with c_del:
+                    if is_confirm:
+                        if st.button("&#x26a0; " + t["confirm_delete_round"], key=f"confirm_del_{rn}", use_container_width=True):
+                            db_delete_round(st.session_state.current_user_id, rn)
+                            st.session_state.confirm_delete_round = None
+                            load_rounds()
+                            st.success(t["round_deleted"])
+                            time.sleep(0.5)
+                            st.rerun()
+                    else:
+                        if st.button("&#x274c; " + t["delete_round"], key=f"del_rnd_{rn}", use_container_width=True):
+                            st.session_state.confirm_delete_round = rn
+                            st.rerun()
+                st.markdown("</div></div>", unsafe_allow_html=True)
+        else:
+            st.markdown(f"""
+            <div style="background:linear-gradient(135deg,#0a0a1a,#1a1a2e); border-radius:20px; padding:30px 20px; text-align:center; border:2px dashed #2a2a4a;">
+                <div style="font-size:40px; margin-bottom:8px;">&#x1f4ed;</div>
+                <p style="color:#AAA; font-size:15px; font-weight:600; margin:0 0 4px 0;">{t['no_rounds']}</p>
+                <p style="color:#666; font-size:12px; margin:0;">{t['no_rounds_hint']}</p>
+            </div>
+            """, unsafe_allow_html=True)
 
         st.markdown("<br>", unsafe_allow_html=True)
         if st.button(t["logout"], use_container_width=True):
@@ -1148,3 +1328,79 @@ else:
         if st.button(t["back_dashboard"], key="back_from_kumbu_sale", use_container_width=True):
             st.session_state.sub_view = "dashboard"
             st.rerun()
+
+    elif st.session_state.sub_view == "viewing_round":
+        rn = st.session_state.viewing_round
+        if rn is None:
+            st.session_state.sub_view = "dashboard"
+            st.rerun()
+        rnd_data = db_get_round(st.session_state.current_user_id, rn)
+        if not rnd_data:
+            st.error("Round not found!")
+            if st.button(t["viewing_back"]):
+                st.session_state.sub_view = "dashboard"
+                st.rerun()
+        else:
+            import json
+            farm_snapshot = json.loads(rnd_data["summary_json"])
+            rn_date = rnd_data["archived_at"][:10] if rnd_data.get("archived_at") else ""
+            
+            total_chicks_r = sum(v.get("chicks_qty", 0) for v in farm_snapshot.values())
+            total_morts_r = sum(v.get("mortality", 0) for v in farm_snapshot.values())
+            total_costs_r = sum(v.get("chicks_cost", 0) + v.get("feed_cost", 0) + v.get("med_cost", 0) + v.get("other_cost", 0) for v in farm_snapshot.values())
+            total_rev_r = 0
+            for v in farm_snapshot.values():
+                for rec in v.get("sales_records", []):
+                    total_rev_r += rec["revenue"]
+            net_r = total_rev_r - total_costs_r
+            
+            st.markdown(f"""<div style="text-align:center; padding:5px 0 15px 0;">
+                <span style="font-size:48px;">&#x1f4e6;</span>
+                <h2 style="color:#FFD700; margin:5px 0 2px 0; font-size:28px; font-weight:800;">{t['viewing_round_title'].format(rn)}</h2>
+                <p style="color:#888; font-size:13px; margin:0;">&#x1f4c5; {t['archived_at']}: {rn_date}</p>
+            </div>""", unsafe_allow_html=True)
+            
+            st.markdown(f"""
+            <div style="display:flex; gap:8px; flex-wrap:wrap; margin-bottom:18px;">
+                <div style="flex:1; min-width:100px; background:linear-gradient(135deg,#0a1a2e,#0f2840); border-radius:14px; padding:12px; text-align:center; border:1px solid #1a3a5a;">
+                    <div style="font-size:24px;">&#x1f425;</div>
+                    <div style="color:#38bdf8; font-size:20px; font-weight:800;">{total_chicks_r}</div>
+                    <div style="color:#789; font-size:10px; font-weight:600;">{t['total_chicks']}</div>
+                </div>
+                <div style="flex:1; min-width:100px; background:linear-gradient(135deg,#2a0a0a,#3a1010); border-radius:14px; padding:12px; text-align:center; border:1px solid #5a2020;">
+                    <div style="font-size:24px;">&#x274c;</div>
+                    <div style="color:#FF5252; font-size:20px; font-weight:800;">{total_morts_r}</div>
+                    <div style="color:#789; font-size:10px; font-weight:600;">{t['deaths']}</div>
+                </div>
+                <div style="flex:1; min-width:100px; background:linear-gradient(135deg,#0a2a0a,#103a10); border-radius:14px; padding:12px; text-align:center; border:1px solid #205a20;">
+                    <div style="font-size:24px;">&#x2705;</div>
+                    <div style="color:#00E676; font-size:20px; font-weight:800;">{total_chicks_r - total_morts_r}</div>
+                    <div style="color:#789; font-size:10px; font-weight:600;">{t['remaining']}</div>
+                </div>
+                <div style="flex:1; min-width:120px; background:linear-gradient(135deg,#1a1a2e,#16213e); border-radius:14px; padding:12px; text-align:center; border:1px solid #0f3460;">
+                    <div style="font-size:24px;">&#x1f4b0;</div>
+                    <div style="color:#FF5252; font-size:16px; font-weight:800;">{total_costs_r:,.0f} TSH</div>
+                    <div style="color:#789; font-size:10px; font-weight:600;">{t['total_expenses']}</div>
+                </div>
+                <div style="flex:1; min-width:120px; background:linear-gradient(135deg,#0a2a0a,#103a10); border-radius:14px; padding:12px; text-align:center; border:1px solid #205a20;">
+                    <div style="font-size:24px;">&#x1f4e6;</div>
+                    <div style="color:#00E676; font-size:16px; font-weight:800;">{total_rev_r:,.0f} TSH</div>
+                    <div style="color:#789; font-size:10px; font-weight:600;">{t['total_revenue']}</div>
+                </div>
+                <div style="flex:1; min-width:100px; background:linear-gradient(135deg,#1a1a2e,#16213e); border-radius:14px; padding:12px; text-align:center; border:1px solid #0f3460;">
+                    <div style="font-size:24px;">{'&#x1f389;' if net_r >= 0 else '&#x26a0;&#xfe0f;'}</div>
+                    <div style="color={'#00E676' if net_r >= 0 else '#FF5252'}; font-size:16px; font-weight:800;">{abs(net_r):,.0f} TSH</div>
+                    <div style="color:#789; font-size:10px; font-weight:600;">{'Faida' if net_r >= 0 else 'Hasara'}</div>
+                </div>
+                <div style="flex:1; min-width:80px; background:linear-gradient(135deg,#1a1a2e,#16213e); border-radius:14px; padding:12px; text-align:center; border:1px solid #0f3460;">
+                    <div style="font-size:24px;">&#x1f4cb;</div>
+                    <div style="color:#38bdf8; font-size:20px; font-weight:800;">{len(farm_snapshot)}</div>
+                    <div style="color:#789; font-size:10px; font-weight:600;">Siku</div>
+                </div>
+            </div>
+            """, unsafe_allow_html=True)
+            
+            if st.button("&#x2190; " + t["viewing_back"], use_container_width=True):
+                st.session_state.viewing_round = None
+                st.session_state.sub_view = "dashboard"
+                st.rerun()
