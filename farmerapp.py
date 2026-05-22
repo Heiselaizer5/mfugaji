@@ -969,12 +969,23 @@ else:
                 st.rerun()
 
         # --- Rounds History ---
-        st.markdown("<hr style='border-color:#2a2a3a; margin:20px 0;'>", unsafe_allow_html=True)
         arrow = "&#x25bc;" if st.session_state.round_history_expanded else "&#x25b6;"
-        if st.button(f"&#x1f4e6; {t['round_history']}  {arrow}", key="toggle_round_hist", use_container_width=True):
+        st.markdown(f"""
+        <div style="background:linear-gradient(135deg,#1a1a2e,#16213e); border:1px solid #2a2a4a; border-radius:20px; padding:24px; box-shadow:0 8px 32px rgba(0,0,0,0.4); margin-top:16px;">
+            <div style="display:flex; justify-content:space-between; align-items:center; cursor:pointer;">
+                <div>
+                    <span style="font-size:28px;">&#x1f4e6;</span>
+                    <span style="color:#FFD700; font-size:17px; font-weight:700; margin-left:8px;">{t['round_history']}</span>
+                </div>
+                <span style="color:#888; font-size:13px;">{arrow}</span>
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
+        
+        if st.button(f"{'&#x25bc; Fungua / Open' if not st.session_state.round_history_expanded else '&#x25b2; Funga / Close'} {t['round_history']}", key="toggle_round_hist", use_container_width=True):
             st.session_state.round_history_expanded = not st.session_state.round_history_expanded
             st.rerun()
-        
+
         if st.session_state.round_history_expanded:
             if st.session_state.rounds_list:
                 for rnd in st.session_state.rounds_list:
