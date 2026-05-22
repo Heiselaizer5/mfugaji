@@ -595,6 +595,13 @@ st.markdown(f"""
     </style>
     """, unsafe_allow_html=True)
 
+# --- Auth forms - hide submit instruction ---
+st.markdown("""
+<style>
+div[data-testid="stForm"] div:last-child { display: none !important; }
+</style>
+""", unsafe_allow_html=True)
+
 # --- Top Header ---
 col_title, col_lang = st.columns([4, 1.3])
 with col_title:
