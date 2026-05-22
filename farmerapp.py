@@ -1007,11 +1007,12 @@ else:
         bd = "border-left:5px solid #FF5252" if days_remaining <= 5 else "border-left:5px solid #FFD700"
         clr = "#FF5252" if days_remaining <= 5 else "#FFD700"
         st.markdown(f"""
-        <div style="{bg}; border-radius:12px; padding:12px; margin-bottom:16px; {bd};">
+        <div style="{bg}; border-radius:12px; padding:12px; margin-bottom:8px; {bd};">
             <p style="color:{clr}; margin:0; font-size:14px; font-weight:700;">{subscription_end_text}</p>
-            {"<p style='color:#FF5252; margin:4px 0 0 0; font-size:12px; font-weight:600;'>&#x1f514; Bonyeza 'Lipia Sasa' hapo juu kuongeza muda! / Click 'Pay Now' above to extend!</p>" if days_remaining <= 5 else ""}
         </div>
         """, unsafe_allow_html=True)
+        if days_remaining <= 5:
+            st.link_button("&#x1f4a5; LIPIA SASA / PAY NOW", url="https://selar.co/9o12h598n9", use_container_width=True)
         
     # Hesabu Jumla ya Maisha ya Shamba (Lifetime Summary)
     lifetime_costs = 0.0
