@@ -971,23 +971,24 @@ else:
                 rn_date = rnd["archived_at"][:10] if rnd.get("archived_at") else ""
                 is_confirm = st.session_state.confirm_delete_round == rn
                 st.markdown(f"""
-                <div style="background:#12121a; border-radius:14px; padding:12px 16px; margin-bottom:8px; border:1px solid #2a2a3a; display:flex; justify-content:space-between; align-items:center;">
-                    <div>
-                        <span style="color:#FFD700; font-weight:800; font-size:16px;">{t['round_label'].format(rn)}</span>
-                        <span style="color:#666; font-size:12px; margin-left:10px;">&#x1f4c5; {rn_date}</span>
+                <div style="background:linear-gradient(135deg,#0a1628,#111827); border-radius:14px; padding:10px 14px; margin-bottom:8px; border:1px solid #2a2a4a; cursor:pointer; transition:0.2s;">
+                    <div style="display:flex; justify-content:space-between; align-items:center;">
+                        <div>
+                            <span style="color:#FFD700; font-weight:800; font-size:15px;">{t['round_label'].format(rn)}</span>
+                            <span style="color:#888; font-size:11px; margin-left:8px;">&#x1f4c5; {rn_date}</span>
+                        </div>
                     </div>
-                    <div style="display:flex; gap:6px;">
-                        <button onclick="alert('Not functional via HTML')" style="display:none;"></button>
+                </div>
                 """, unsafe_allow_html=True)
-                c_view, c_del = st.columns([1, 1])
+                c_view, c_del = st.columns([3, 1])
                 with c_view:
-                    if st.button("&#x1f441; " + t["view_round"], key=f"view_rnd_{rn}", use_container_width=True):
+                    if st.button("&#x1f441; Angalia / View", key=f"view_rnd_{rn}", use_container_width=True):
                         st.session_state.viewing_round = rn
                         st.session_state.sub_view = "viewing_round"
                         st.rerun()
                 with c_del:
                     if is_confirm:
-                        if st.button("&#x26a0; " + t["confirm_delete_round"], key=f"confirm_del_{rn}", use_container_width=True):
+                        if st.button("&#x26a0; Ndiyo / Yes", key=f"confirm_del_{rn}", use_container_width=True):
                             db_delete_round(st.session_state.current_user_id, rn)
                             st.session_state.confirm_delete_round = None
                             load_rounds()
@@ -998,7 +999,6 @@ else:
                         if st.button("&#x274c; " + t["delete_round"], key=f"del_rnd_{rn}", use_container_width=True):
                             st.session_state.confirm_delete_round = rn
                             st.rerun()
-                st.markdown("</div></div>", unsafe_allow_html=True)
         else:
             st.markdown(f"""
             <div style="background:linear-gradient(135deg,#0a0a1a,#1a1a2e); border-radius:20px; padding:30px 20px; text-align:center; border:2px dashed #2a2a4a;">
@@ -1410,6 +1410,40 @@ else:
                 </div>
             </div>
             """, unsafe_allow_html=True)
+            
+            # Show individual days for this round
+            st.markdown(f"""<div style="margin:20px 0 10px 0;">
+                <span style="color:#38bdf8; font-size:18px; font-weight:700;">&#x1f4c5; Siku za Awamu hii / Days in this round</span>
+            </div>""", unsafe_allow_html=True)
+            for date_key in sorted(farm_snapshot.keys(), reverse=True):
+                e = farm_snapshot[date_key]
+                day_cost = e.get("chicks_cost", 0) + e.get("feed_cost", 0) + e.get("med_cost", 0) + e.get("other_cost", 0)
+                day_sales = e.get("sales_records", [])
+                day_rev = sum(r["revenue"] for r in day_sales)
+                surviving = e.get("chicks_qty", 0) - e.get("mortality", 0)
+                st.markdown(f"""
+                <div style="background:#12121a; border-radius:12px; padding:10px 14px; margin-bottom:8px; border:1px solid #2a2a3a;">
+                    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;">
+                        <span style="color:#FFF; font-size:14px; font-weight:700;">&#x1f4c5; {date_key}</span>
+                        <span style="background:rgba(56,189,248,0.15); color:#38bdf8; padding:2px 10px; border-radius:12px; font-size:11px; font-weight:600;">{e.get('chicks_qty', 0)} Kuku</span>
+                    </div>
+                    <div style="display:flex; gap:10px; flex-wrap:wrap; font-size:12px; margin-top:4px;">
+                        <span style="color:#AAA;">&#x1f4b0; Gharama: <b style="color:#FF5252;">{day_cost:,.0f} TSH</b></span>
+                        <span style="color:#AAA;">&#x1f4e6; Mapato: <b style="color:#00E676;">{day_rev:,.0f} TSH</b></span>
+                        <span style="color:#AAA;">&#x274c; Vifo: <b style="color:#FF5252;">{e.get('mortality', 0)}</b></span>
+                        <span style="color:#AAA;">&#x2705; Waliopo: <b style="color:#00E676;">{surviving}</b></span>
+                    </div>
+                </div>
+                """, unsafe_allow_html=True)
+                if day_sales:
+                    for rec in day_sales:
+                        st.markdown(f"""
+                        <div style="margin-left:16px; margin-top:2px; margin-bottom:4px; padding:4px 10px; background:#1a1a2a; border-radius:8px; border-left:3px solid #00E676; font-size:12px;">
+                            <span style="color:#FFF;">&#x1f464; {rec['customer']}</span>
+                            <span style="color:#AAA; margin-left:10px;">&#x1f414; {rec['qty']} &#xd7; {rec['price']:,.0f} TSH</span>
+                            <span style="color:#00E676; margin-left:8px; font-weight:600;">= {rec['revenue']:,.0f} TSH</span>
+                        </div>
+                        """, unsafe_allow_html=True)
             
             if st.button("&#x2190; " + t["viewing_back"], use_container_width=True):
                 st.session_state.viewing_round = None
