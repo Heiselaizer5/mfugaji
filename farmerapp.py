@@ -595,14 +595,15 @@ st.markdown(f"""
     </style>
     """, unsafe_allow_html=True)
 
-# --- Auth forms - hide submit instruction ---
+# --- Auth forms inline CSS ---
 st.markdown("""
 <style>
 div[data-testid="stForm"] div:last-child { display: none !important; }
+form [data-testid="baseButton-secondary"] { margin-top: 8px; }
 </style>
 """, unsafe_allow_html=True)
 
-# --- Top Header ---
+# --- SEHEMU YA 1: AUTHENTICATION FLOW ---
 col_title, col_lang = st.columns([4, 1.3])
 with col_title:
     st.markdown(f'<div class="brand-title">MFUGAJI KWANZA <span class="brand-subtitle">{t["subtitle"]}</span></div>', unsafe_allow_html=True)
