@@ -592,6 +592,11 @@ st.markdown(f"""
     .auth-switch a {{ color: #00E676; text-decoration: none; font-weight: 600; cursor: pointer; }}
     .auth-switch a:hover {{ color: #00FF5E; text-decoration: underline; }}
     [data-testid="stFormSubmitInstruction"], .stFormSubmitInstruction {{ display: none !important; visibility: hidden !important; height: 0 !important; overflow: hidden !important; }}
+    #MainMenu {{ visibility: hidden; }}
+    footer {{ visibility: hidden; }}
+    header {{ visibility: hidden; }}
+    [data-testid="stToolbar"] {{ display: none !important; }}
+    [data-testid="stDecoration"] {{ display: none !important; }}
     </style>
     """, unsafe_allow_html=True)
 
