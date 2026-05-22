@@ -591,7 +591,7 @@ st.markdown(f"""
     .auth-switch {{ color: #888; text-align: center; margin-top: 16px; font-size: 14px; }}
     .auth-switch a {{ color: #00E676; text-decoration: none; font-weight: 600; cursor: pointer; }}
     .auth-switch a:hover {{ color: #00FF5E; text-decoration: underline; }}
-    [data-testid="stFormSubmitInstruction"] {{ display: none !important; }}
+    [data-testid="stFormSubmitInstruction"], .stFormSubmitInstruction {{ display: none !important; visibility: hidden !important; height: 0 !important; overflow: hidden !important; }}
     </style>
     """, unsafe_allow_html=True)
 
