@@ -355,7 +355,12 @@ st.set_page_config(
     page_title="Mfugaji Kwanza - Broiler Manager",
     page_icon="&#x1f414;",
     layout="wide",
-    initial_sidebar_state="collapsed"
+    initial_sidebar_state="collapsed",
+    menu_items={
+        'Get Help': None,
+        'Report a Bug': None,
+        'About': None
+    }
 )
 
 # --- Initialize Session States ---
