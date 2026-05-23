@@ -391,6 +391,8 @@ if "confirm_delete_round" not in st.session_state:
     st.session_state.confirm_delete_round = None
 if "round_history_expanded" not in st.session_state:
     st.session_state.round_history_expanded = False
+if "expanded_round" not in st.session_state:
+    st.session_state.expanded_round = None
 
 init_db()
 
@@ -1172,37 +1174,17 @@ else:
                     rn = rnd["round_number"]
                     rn_date = rnd["archived_at"][:10] if rnd.get("archived_at") else ""
                     is_confirm = st.session_state.confirm_delete_round == rn
-                    import json
-                    try:
-                        snap = json.loads(rnd.get("summary_json", "{}"))
-                    except:
-                        snap = {}
-                    tc = sum(v.get("chicks_qty", 0) for v in snap.values())
-                    tm = sum(v.get("mortality", 0) for v in snap.values())
-                    tr = 0
-                    for v in snap.values():
-                        for rec in v.get("sales_records", []):
-                            tr += rec.get("revenue", 0)
                     st.markdown(f"""
-                    <div class="dashboard-card" style="padding:14px 16px !important; margin-bottom:10px; text-align:left;">
-                        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
-                            <span style="color:#FFD700; font-weight:800; font-size:16px;">&#x1f4e6; {t['round_label'].format(rn)}</span>
-                            <span style="color:#888; font-size:12px;">&#x1f4c5; {rn_date}</span>
-                        </div>
-                        <div style="display:flex; gap:8px; flex-wrap:wrap; margin-bottom:8px;">
-                            <span style="color:#AAA; font-size:12px;">&#x1f425; Kuku: <b style="color:#38bdf8;">{tc}</b></span>
-                            <span style="color:#AAA; font-size:12px;">&#x274c; Vifo: <b style="color:#FF5252;">{tm}</b></span>
-                            <span style="color:#AAA; font-size:12px;">&#x2705; Salama: <b style="color:#00E676;">{tc - tm}</b></span>
-                            <span style="color:#AAA; font-size:12px;">&#x1f4b0; Mapato: <b style="color:#00E676;">{tr:,.0f} TSH</b></span>
-                        </div>
-                        <div style="display:flex; gap:6px;">
-                            <div style="flex:3;">{"".join(f'<span style="display:inline-block; width:10px; height:10px; border-radius:3px; margin-right:1px; background:#{"00E676" if v.get("has_inputs") or v.get("has_sales") else "#2a2a3a"};"></span>' for d, v in sorted(snap.items()))}</div>
+                    <div style="background:linear-gradient(135deg,#1a1a2e,#16213e); border-radius:16px; padding:14px 18px; margin-bottom:10px; border:1px solid #2a2a4a; display:flex; justify-content:space-between; align-items:center;">
+                        <div>
+                            <span style="color:#FFD700; font-weight:800; font-size:17px;">&#x1f4e6; {t['round_label'].format(rn)}</span>
+                            <span style="color:#888; font-size:12px; margin-left:10px;">&#x1f4c5; {rn_date}</span>
                         </div>
                     </div>
                     """, unsafe_allow_html=True)
                     c_view, c_del = st.columns([3, 1])
                     with c_view:
-                        if st.button("&#x1f441; Angalia / View", key=f"view_rnd_{rn}", use_container_width=True):
+                        if st.button("&#x1f441; " + t["round_label"].format(rn), key=f"view_rnd_{rn}", use_container_width=True):
                             st.session_state.viewing_round = rn
                             st.session_state.sub_view = "viewing_round"
                             st.rerun()
@@ -1560,6 +1542,7 @@ else:
         if st.button(t["back_dashboard"], key="back_from_kumbu_sale", use_container_width=True):
             st.session_state.sub_view = "dashboard"
             st.rerun()
+
     elif st.session_state.sub_view == "viewing_round":
         rn = st.session_state.viewing_round
         if rn is None:
@@ -1575,7 +1558,7 @@ else:
             import json
             farm_snapshot = json.loads(rnd_data["summary_json"])
             rn_date = rnd_data["archived_at"][:10] if rnd_data.get("archived_at") else ""
-            
+
             total_chicks_r = sum(v.get("chicks_qty", 0) for v in farm_snapshot.values())
             total_morts_r = sum(v.get("mortality", 0) for v in farm_snapshot.values())
             total_costs_r = sum(v.get("chicks_cost", 0) + v.get("feed_cost", 0) + v.get("med_cost", 0) + v.get("other_cost", 0) for v in farm_snapshot.values())
@@ -1584,13 +1567,13 @@ else:
                 for rec in v.get("sales_records", []):
                     total_rev_r += rec["revenue"]
             net_r = total_rev_r - total_costs_r
-            
+
             st.markdown(f"""<div style="text-align:center; padding:5px 0 15px 0;">
                 <span style="font-size:48px;">&#x1f4e6;</span>
                 <h2 style="color:#FFD700; margin:5px 0 2px 0; font-size:28px; font-weight:800;">{t['viewing_round_title'].format(rn)}</h2>
                 <p style="color:#888; font-size:13px; margin:0;">&#x1f4c5; {t['archived_at']}: {rn_date}</p>
             </div>""", unsafe_allow_html=True)
-            
+
             st.markdown(f"""
             <div style="display:flex; gap:8px; flex-wrap:wrap; margin-bottom:18px;">
                 <div style="flex:1; min-width:100px; background:linear-gradient(135deg,#0a1a2e,#0f2840); border-radius:14px; padding:12px; text-align:center; border:1px solid #1a3a5a;">
@@ -1630,8 +1613,7 @@ else:
                 </div>
             </div>
             """, unsafe_allow_html=True)
-            
-            # Show individual days for this round
+
             st.markdown(f"""<div style="margin:20px 0 10px 0;">
                 <span style="color:#38bdf8; font-size:18px; font-weight:700;">&#x1f4c5; Siku za Awamu hii / Days in this round</span>
             </div>""", unsafe_allow_html=True)
@@ -1664,8 +1646,9 @@ else:
                             <span style="color:#00E676; margin-left:8px; font-weight:600;">= {rec['revenue']:,.0f} TSH</span>
                         </div>
                         """, unsafe_allow_html=True)
-            
+
             if st.button("&#x2190; " + t["viewing_back"], use_container_width=True):
                 st.session_state.viewing_round = None
                 st.session_state.sub_view = "dashboard"
                 st.rerun()
+
