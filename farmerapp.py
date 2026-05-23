@@ -1109,15 +1109,8 @@ else:
         col_btn1, col_btn2, col_btn3 = st.columns([1, 2, 1])
         with col_btn2:
             if st.button("&#x1f4c8; " + t["calc_profit_btn"], use_container_width=True):
-                st.session_state.profit_calculated = True
+                st.session_state.sub_view = "profit_page"
                 st.rerun()
-            if st.session_state.profit_calculated:
-                net_profit = lifetime_revenue - lifetime_costs
-                if net_profit > 0:
-                    st.success(f"&#x1f389; {t['profit_msg']} **{net_profit:,.2f} TSH**")
-                else:
-                    st.error(f"&#x26a0;&#xfe0f; {t['loss_msg']} **{abs(net_profit):,.2f} TSH**")
-                st.info(t['profit_chicks'].format(total_chicks, total_morts, net_chicks))
         st.markdown("<hr style='border-color:#2a2a3a; margin:20px 0;'>", unsafe_allow_html=True)
         st.markdown(f"""<div style="text-align:center; margin-bottom:16px;">
             <span style="color:#38bdf8; font-size:22px; font-weight:800;">&#x1f4cb; {t['record_header']}</span>
@@ -1651,4 +1644,95 @@ else:
                 st.session_state.viewing_round = None
                 st.session_state.sub_view = "dashboard"
                 st.rerun()
+
+    elif st.session_state.sub_view == "profit_page":
+        uid = st.session_state.current_user_id
+        frows = db_get_farm_dates(uid)
+        srows = db_get_sales_records(uid)
+        
+        total_chicks = sum(r["chicks_qty"] for r in frows)
+        total_morts = sum(r["mortality"] for r in frows)
+        total_feed = sum(r["feed_cost"] for r in frows)
+        total_med = sum(r["med_cost"] for r in frows)
+        total_other = sum(r["other_cost"] for r in frows)
+        total_chicks_cost = sum(r["chicks_cost"] for r in frows)
+        total_costs = total_chicks_cost + total_feed + total_med + total_other
+        
+        sold_qty = sum(s["qty"] for s in srows)
+        total_rev = sum(s["revenue"] for s in srows)
+        unique_customers = list(set(s["customer"] for s in srows))
+        remaining = total_chicks - total_morts - sold_qty
+        if remaining < 0:
+            remaining = 0
+        
+        net = total_rev - total_costs
+        
+        st.markdown(f"""
+        <div style="background:linear-gradient(135deg,#0a0a1a,#1a1a2e); border-radius:24px; padding:30px; border:2px solid #FFD700; box-shadow:0 12px 48px rgba(255,215,0,0.1); margin:10px 0;">
+            <div style="text-align:center; margin-bottom:20px;">
+                <span style="font-size:48px;">{'&#x1f389;' if net >= 0 else '&#x26a0;&#xfe0f;'}</span>
+                <h1 style="color:{'#00E676' if net >= 0 else '#FF5252'}; font-size:42px; font-weight:900; margin:8px 0; letter-spacing:1px;">
+                    {t['profit_msg'] if net >= 0 else t['loss_msg']} {abs(net):,.0f} TSH
+                </h1>
+            </div>
+            <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px 20px; background:#12121a; border-radius:16px; padding:20px; border:1px solid #2a2a3a;">
+                <div style="color:#AAA; font-size:14px;">&#x1f425; Jumla Vifaranga</div>
+                <div style="text-align:right; font-size:16px; font-weight:700; color:#38bdf8;">{total_chicks}</div>
+                <div style="color:#AAA; font-size:14px;">&#x274c; Vifo</div>
+                <div style="text-align:right; font-size:16px; font-weight:700; color:#FF5252;">{total_morts}</div>
+                <div style="color:#AAA; font-size:14px;">&#x1f4b0; Waliouzwa</div>
+                <div style="text-align:right; font-size:16px; font-weight:700; color:#FFD700;">{sold_qty}</div>
+                <div style="color:#AAA; font-size:14px;">&#x2705; Waliobaki</div>
+                <div style="text-align:right; font-size:16px; font-weight:700; color:#00E676;">{remaining}</div>
+                <div style="border-top:1px solid #2a2a3a; grid-column:1/-1; margin:4px 0;"></div>
+                <div style="color:#AAA; font-size:14px;">&#x1f33e; Gharama za Chakula</div>
+                <div style="text-align:right; font-size:16px; font-weight:700; color:#FFF;">{total_feed:,.0f} TSH</div>
+                <div style="color:#AAA; font-size:14px;">💊 Gharama za Dawa</div>
+                <div style="text-align:right; font-size:16px; font-weight:700; color:#FFF;">{total_med:,.0f} TSH</div>
+                <div style="color:#AAA; font-size:14px;">&#x1f527; Gharama Nyingine</div>
+                <div style="text-align:right; font-size:16px; font-weight:700; color:#FFF;">{total_other:,.0f} TSH</div>
+                <div style="color:#AAA; font-size:14px;">&#x1f425; Gharama za Vifaranga</div>
+                <div style="text-align:right; font-size:16px; font-weight:700; color:#FFF;">{total_chicks_cost:,.0f} TSH</div>
+                <div style="color:#AAA; font-size:14px; font-weight:700;">&#x1f4b1; Jumla Matumizi</div>
+                <div style="text-align:right; font-size:18px; font-weight:800; color:#FF5252;">{total_costs:,.0f} TSH</div>
+                <div style="border-top:1px solid #2a2a3a; grid-column:1/-1; margin:4px 0;"></div>
+        """, unsafe_allow_html=True)
+        
+        if srows:
+            st.markdown(f"""
+            <div style="grid-column:1/-1;">
+                <div style="color:#00E676; font-size:15px; font-weight:700; margin-bottom:8px;">&#x1f465; Wateja ({len(unique_customers)})</div>
+            """, unsafe_allow_html=True)
+            cust_data = {}
+            for s in srows:
+                name = s["customer"]
+                if name not in cust_data:
+                    cust_data[name] = {"qty": 0, "total": 0}
+                cust_data[name]["qty"] += s["qty"]
+                cust_data[name]["total"] += s["revenue"]
+            for cname, cinfo in cust_data.items():
+                st.markdown(f"""
+                <div style="display:flex; justify-content:space-between; background:#1a1a2a; border-radius:8px; padding:8px 12px; margin-bottom:4px; border-left:3px solid #00E676; grid-column:1/-1;">
+                    <span style="color:#FFF; font-size:13px;">&#x1f464; {cname}</span>
+                    <span style="color:#AAA; font-size:13px;">&#x1f414; {cinfo['qty']}</span>
+                    <span style="color:#00E676; font-size:13px; font-weight:600;">{cinfo['total']:,.0f} TSH</span>
+                </div>
+                """, unsafe_allow_html=True)
+            st.markdown(f"""
+                <div style="display:flex; justify-content:space-between; background:#0a2a0a; border-radius:8px; padding:8px 12px; margin-top:6px; font-weight:700; grid-column:1/-1;">
+                    <span style="color:#FFF;">&#x1f4e6; Jumla Mauzo</span>
+                    <span style="color:#FFD700; font-size:15px;">{total_rev:,.0f} TSH</span>
+                </div>
+            </div>
+            """, unsafe_allow_html=True)
+        else:
+            st.markdown(f"""
+            <div style="grid-column:1/-1; color:#888; font-size:13px; text-align:center;">Hakuna mauzo bado / No sales yet</div>
+            """, unsafe_allow_html=True)
+        
+        st.markdown("</div></div>", unsafe_allow_html=True)
+        
+        if st.button("&#x2190; Rudi Dashibodi / Back to Dashboard", use_container_width=True):
+            st.session_state.sub_view = "dashboard"
+            st.rerun()
 
