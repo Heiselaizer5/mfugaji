@@ -1218,20 +1218,17 @@ else:
     due_today_reminders = [r for r in all_reminders if r["due_date"] == today_str]
     upcoming_reminders = [r for r in all_reminders if r["due_date"] > today_str]
 
-    if all_reminders:
-        st.info(f"📋 Una reminder {len(all_reminders)} zinazosubiri / You have {len(all_reminders)} pending reminder(s)", icon="📋")
-    
     if overdue_reminders:
         for r in overdue_reminders:
-            st.error(f"🚨 **{r['title']}** — Imechelewa / Overdue ({r['due_date']})", icon="🚨")
+            st.error(f"⚠️ **{r['title']}** — Imechelewa / Overdue ({r['due_date']})", icon="🚨")
 
     if due_today_reminders:
         for r in due_today_reminders:
-            st.warning(f"⏰ **{r['title']}** — Leo / Today ({r['due_date']})", icon="⏰")
+            st.warning(f"⭐ **{r['title']}** — Leo / Today ({r['due_date']})", icon="⏰")
 
     if upcoming_reminders:
         for r in upcoming_reminders[:5]:
-            st.info(f"📌 **{r['title']}** — {r['due_date']}", icon="📌")
+            st.warning(f"🌟 **{r['title']}** — Inakaribia / Upcoming ({r['due_date']})", icon="📌")
 
     if st.session_state.sub_view == "dashboard":
         st.markdown(f"""<div style="text-align:center; margin-bottom:20px;">
