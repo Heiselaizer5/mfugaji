@@ -1338,10 +1338,9 @@ else:
 
         st.markdown(f"""
         <div style="background:linear-gradient(135deg,#1a1a2e,#16213e); border:1px solid #2a2a4a; border-radius:20px; padding:20px 24px; box-shadow:0 8px 32px rgba(0,0,0,0.4); margin-top:16px;">
-            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
-                <span style="font-size:24px;">&#x23f0;</span>
-                <span style="color:#FFD700; font-size:17px; font-weight:700; margin-left:8px;">{t['reminders_title']}</span>
-            </div>
+            <span style="font-size:24px;">&#x23f0;</span>
+            <span style="color:#FFD700; font-size:17px; font-weight:700; margin-left:8px;">{t['reminders_title']}</span>
+        </div>
         """, unsafe_allow_html=True)
 
         has_any = bool(overdue) or bool(due_soon) or bool(upcoming)
@@ -1362,8 +1361,6 @@ else:
 
         if not has_any:
             st.markdown(f"""<div style="padding:16px; text-align:center; border:2px dashed #2a2a4a; border-radius:12px;"><p style="color:#AAA; font-size:14px; margin:0 0 4px 0;">{t['no_reminders']}</p><p style="color:#666; font-size:12px; margin:0;">{t['no_reminders_hint']}</p></div>""", unsafe_allow_html=True)
-
-        st.markdown("</div>", unsafe_allow_html=True)
 
         col_rem1, col_rem2 = st.columns(2)
         with col_rem1:
