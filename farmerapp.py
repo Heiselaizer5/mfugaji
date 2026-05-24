@@ -2040,9 +2040,10 @@ else:
 
         _, center_f, _ = st.columns([1, 1.8, 1])
         with center_f:
+            st.markdown("""<style>div[data-testid="column"]:has(> div > div.reminder-wrap) > div{background:linear-gradient(145deg,#1a1a2e,#16213e)!important;border:1px solid #2a2a4a!important;border-radius:20px!important;padding:32px!important;box-shadow:0 8px 32px rgba(0,0,0,0.4)!important;}</style><div class="reminder-wrap" style="display:none;"></div>""", unsafe_allow_html=True)
             icon = '&#x270f;&#xfe0f;' if is_edit else '&#x2795;'
             title = t['reminder_edit'] if is_edit else t['add_reminder']
-            st.markdown(f"<h3 style='text-align:center;color:#FFD700;font-size:24px;font-weight:800;'>{icon} {title}</h3>", unsafe_allow_html=True)
+            st.markdown(f"<h3 style='text-align:center;color:#FFD700;font-size:24px;font-weight:800;margin-top:0;'>{icon} {title}</h3>", unsafe_allow_html=True)
             st.markdown("<hr style='border-color:#2a2a4a;margin:16px 0;'>", unsafe_allow_html=True)
             rem_type_labels = {
                 "chanjo": t["reminder_type_chanjo"],
