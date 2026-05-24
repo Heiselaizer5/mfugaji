@@ -2042,14 +2042,10 @@ else:
                     edit_data = rr
                     break
 
-        st.markdown(f"""<div style="text-align:center; padding:5px 0 15px 0;">
-            <span style="font-size:36px;">{'&#x270f;&#xfe0f;' if is_edit else '&#x2795;'}</span>
-            <h2 style="color:#FFD700; margin:5px 0 2px 0; font-size:24px; font-weight:800;">{t['reminder_edit'] if is_edit else t['add_reminder']}</h2>
-        </div>""", unsafe_allow_html=True)
+        st.markdown(f"""<div style="background:linear-gradient(145deg,#1a1a2e,#16213e);border:1px solid #2a2a4a;border-radius:20px;padding:24px 28px;box-shadow:0 8px 32px rgba(0,0,0,0.4);margin-bottom:16px;"><h4 style="color:#FFD700;margin:0 0 6px 0;">{'&#x270f;&#xfe0f;' if is_edit else '&#x2795;'} {t['reminder_edit'] if is_edit else t['add_reminder']}</h4></div>""", unsafe_allow_html=True)
 
         _, center_f, _ = st.columns([1, 2, 1])
         with center_f:
-            st.markdown("""<div class="auth-card">""", unsafe_allow_html=True)
             rem_type_labels = {
                 "chanjo": t["reminder_type_chanjo"],
                 "dawa": t["reminder_type_dawa"],
@@ -2110,6 +2106,5 @@ else:
                 st.session_state.edit_reminder_id = None
                 st.session_state.sub_view = "reminders_all"
                 st.rerun()
-            st.markdown("</div>", unsafe_allow_html=True)
 
 
