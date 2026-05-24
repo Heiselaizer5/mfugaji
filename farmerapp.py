@@ -2049,6 +2049,7 @@ else:
 
         _, center_f, _ = st.columns([1, 2, 1])
         with center_f:
+            st.markdown("""<div class="auth-card">""", unsafe_allow_html=True)
             rem_type_labels = {
                 "chanjo": t["reminder_type_chanjo"],
                 "dawa": t["reminder_type_dawa"],
@@ -2109,5 +2110,6 @@ else:
                 st.session_state.edit_reminder_id = None
                 st.session_state.sub_view = "reminders_all"
                 st.rerun()
+            st.markdown("</div>", unsafe_allow_html=True)
 
 
