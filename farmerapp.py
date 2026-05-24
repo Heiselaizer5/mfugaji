@@ -2040,8 +2040,10 @@ else:
 
         _, center_f, _ = st.columns([1, 1.8, 1])
         with center_f:
-            st.markdown("""<div class="auth-card">""", unsafe_allow_html=True)
-            st.markdown(f"""<div style="text-align:center;margin-bottom:20px;"><span style="font-size:48px;">{'&#x270f;&#xfe0f;' if is_edit else '&#x2795;'}</span><h3 style="color:#FFD700;margin:8px 0 2px 0;font-size:24px;font-weight:800;">{t['reminder_edit'] if is_edit else t['add_reminder']}</h3></div>""", unsafe_allow_html=True)
+            icon = '&#x270f;&#xfe0f;' if is_edit else '&#x2795;'
+            title = t['reminder_edit'] if is_edit else t['add_reminder']
+            st.markdown(f"<h3 style='text-align:center;color:#FFD700;font-size:24px;font-weight:800;'>{icon} {title}</h3>", unsafe_allow_html=True)
+            st.markdown("<hr style='border-color:#2a2a4a;margin:16px 0;'>", unsafe_allow_html=True)
             rem_type_labels = {
                 "chanjo": t["reminder_type_chanjo"],
                 "dawa": t["reminder_type_dawa"],
@@ -2102,6 +2104,5 @@ else:
                 st.session_state.edit_reminder_id = None
                 st.session_state.sub_view = "reminders_all"
                 st.rerun()
-            st.markdown("</div>", unsafe_allow_html=True)
 
 
