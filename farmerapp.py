@@ -1967,12 +1967,11 @@ else:
             st.rerun()
 
     elif st.session_state.sub_view == "reminders_all":
-        st.markdown(f"## &#x23f0; {t['reminder_header']}")
-        st.caption(t['reminder_subtitle'])
+        st.markdown(f"""<div style="text-align:center;padding:10px 0"><span style="font-size:32px;">&#x23f0;</span><h2 style="color:#FFD700;margin:4px 0;font-size:24px;font-weight:800;">{t['reminder_header']}</h2><p style="color:#888;font-size:13px;margin:0;">{t['reminder_subtitle']}</p></div>""", unsafe_allow_html=True)
 
         all_reminders = db_get_reminders(st.session_state.current_user_id, include_done=True)
         if not all_reminders:
-            st.info(f"&#x23f0; {t['no_reminders']} {t['no_reminders_hint']}")
+            st.markdown(f"""<div style="background:linear-gradient(135deg,#0a0a1a,#1a1a2e);border-radius:20px;padding:40px 20px;text-align:center;border:2px dashed #2a2a4a;"><div style="font-size:56px;margin-bottom:10px;">&#x23f0;</div><p style="color:#FFD700;font-size:18px;font-weight:700;margin:0 0 6px 0;">{t['no_reminders']}</p><p style="color:#666;font-size:13px;margin:0;">{t['no_reminders_hint']}</p></div>""", unsafe_allow_html=True)
         else:
             today_str = date.today().strftime("%Y-%m-%d")
             for r in sorted(all_reminders, key=lambda x: x["due_date"]):
@@ -1980,22 +1979,30 @@ else:
                 is_done = r.get("is_done", 0)
                 overdue = not is_done and r["due_date"] < today_str
                 due_today = not is_done and r["due_date"] == today_str
-                icon = {"chanjo": "💉", "dawa": "💊", "chakula": "🌾"}.get(r["reminder_type"], "📌")
+                icon = {"chanjo": "&#x1f489;", "dawa": "&#x1f48a;", "chakula": "&#x1f33e;"}.get(r["reminder_type"], "&#x1f4cc;")
                 type_label = {"chanjo": t["reminder_type_chanjo"], "dawa": t["reminder_type_dawa"], "chakula": t["reminder_type_chakula"]}.get(r["reminder_type"], t["reminder_type_general"])
 
                 if is_done:
-                    st.success(f"{icon} **{r['title']}** — {type_label} — {t['reminder_done']}")
+                    border = "border-left:6px solid #00E676"
+                    bg = "background:linear-gradient(135deg,#0a1a0a,#0a2a0a)"
+                    badge = f"<span style='background:#00E676;color:#000;padding:2px 12px;border-radius:12px;font-size:11px;font-weight:700;'>{t['reminder_done']}</span>"
                 elif overdue:
-                    st.error(f"{icon} **{r['title']}** — {type_label} — {t['reminder_overdue']} ({r['due_date']})")
+                    border = "border-left:6px solid #FF5252"
+                    bg = "background:linear-gradient(135deg,#1a0a0a,#2a0a0a)"
+                    badge = f"<span style='background:#FF5252;color:#FFF;padding:2px 12px;border-radius:12px;font-size:11px;font-weight:700;'>&#x274c; {t['reminders_overdue_text']}</span>"
                 elif due_today:
-                    st.warning(f"{icon} **{r['title']}** — {type_label} — {t['reminder_today']}")
+                    border = "border-left:6px solid #FFD700"
+                    bg = "background:linear-gradient(135deg,#1a1a0a,#2a2a0a)"
+                    badge = f"<span style='background:#FFD700;color:#000;padding:2px 12px;border-radius:12px;font-size:11px;font-weight:700;'>&#x23f0; {t['reminder_today']}</span>"
                 else:
-                    st.info(f"{icon} **{r['title']}** — {type_label} — 📅 {r['due_date']}")
+                    border = "border-left:6px solid #38bdf8"
+                    bg = "background:linear-gradient(135deg,#0a0a1a,#0f1a2a)"
+                    badge = f"<span style='background:#38bdf8;color:#000;padding:2px 12px;border-radius:12px;font-size:11px;font-weight:700;'>&#x1f4c5; {r['due_date']}</span>"
 
-                if r.get('description'):
-                    st.caption(r['description'])
-                if r['frequency_days'] > 0:
-                    st.caption(f"Kila {r['frequency_days']}d")
+                freq = f"<span style='color:#888;font-size:10px;margin-left:6px;'>| Kila {r['frequency_days']}d</span>" if r['frequency_days'] > 0 else ""
+                desc = f"<br><span style='color:#AAA;font-size:12px;'>{r['description']}</span>" if r.get('description') else ""
+
+                st.markdown(f"""<div style="{bg};{border};border-radius:14px;padding:14px 18px;margin-bottom:8px;box-shadow:0 4px 12px rgba(0,0,0,0.3);"><div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;"><div><span style="color:#FFF;font-size:15px;font-weight:600;">{icon} {r['title']}</span><span style="color:#888;font-size:11px;margin-left:8px;">{type_label}</span>{freq}{desc}</div><div>{badge}</div></div></div>""", unsafe_allow_html=True)
 
                 c1, c2, c3 = st.columns([1, 1, 1])
                 if not is_done:
@@ -2016,7 +2023,6 @@ else:
                         st.success(t["reminder_deleted"])
                         time.sleep(0.3)
                         st.rerun()
-                st.divider()
 
         if st.button(t["add_reminder"], key="add_from_all", use_container_width=True):
             st.session_state.sub_view = "reminders_add"
