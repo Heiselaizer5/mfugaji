@@ -2049,62 +2049,61 @@ else:
 
         _, center_f, _ = st.columns([1, 2, 1])
         with center_f:
-            with st.form(key="reminder_form"):
-                rem_type_labels = {
-                    "chanjo": t["reminder_type_chanjo"],
-                    "dawa": t["reminder_type_dawa"],
-                    "chakula": t["reminder_type_chakula"],
-                    "general": t["reminder_type_general"],
-                }
-                rt_order = ["chanjo", "dawa", "chakula", "general"]
-                default_rt = edit_data.get("reminder_type", "chanjo") if edit_data else "chanjo"
-                rt_index = rt_order.index(default_rt) if default_rt in rt_order else 0
-                rem_type_val = st.radio(
-                    t["reminder_type"],
-                    options=rt_order, index=rt_index,
-                    format_func=lambda x: rem_type_labels[x],
-                    horizontal=True,
-                )
+            rem_type_labels = {
+                "chanjo": t["reminder_type_chanjo"],
+                "dawa": t["reminder_type_dawa"],
+                "chakula": t["reminder_type_chakula"],
+                "general": t["reminder_type_general"],
+            }
+            rt_order = ["chanjo", "dawa", "chakula", "general"]
+            default_rt = edit_data.get("reminder_type", "chanjo") if edit_data else "chanjo"
+            rt_index = rt_order.index(default_rt) if default_rt in rt_order else 0
+            rem_type_val = st.radio(
+                t["reminder_type"],
+                options=rt_order, index=rt_index,
+                format_func=lambda x: rem_type_labels[x],
+                horizontal=True,
+            )
 
-                rem_title = st.text_input(t["reminder_title"], value=edit_data["title"] if edit_data else "", placeholder="E.g. Gumboro vaccine, Buy feed...")
-                rem_desc = st.text_input(t["reminder_desc"], value=edit_data.get("description", "") if edit_data else "", placeholder=t["reminder_desc_placeholder"])
-                default_date = edit_data["due_date"] if edit_data else str(date.today())
-                rem_date = st.date_input(t["reminder_date"], value=datetime.strptime(default_date, "%Y-%m-%d").date())
+            rem_title = st.text_input(t["reminder_title"], value=edit_data["title"] if edit_data else "", placeholder="E.g. Gumboro vaccine, Buy feed...")
+            rem_desc = st.text_input(t["reminder_desc"], value=edit_data.get("description", "") if edit_data else "", placeholder=t["reminder_desc_placeholder"])
+            default_date = edit_data["due_date"] if edit_data else str(date.today())
+            rem_date = st.date_input(t["reminder_date"], value=datetime.strptime(default_date, "%Y-%m-%d").date())
 
-                freq_labels = {0: t["reminder_once"], 1: t["reminder_daily"], 7: t["reminder_weekly"], 14: t["reminder_biweekly"], 30: t["reminder_monthly"]}
-                freq_order = [0, 1, 7, 14, 30]
-                default_fd = edit_data.get("frequency_days", 0) if edit_data else 0
-                fd_index = freq_order.index(default_fd) if default_fd in freq_order else 0
-                rem_freq_val = st.radio(
-                    t["reminder_frequency"],
-                    options=freq_order, index=fd_index,
-                    format_func=lambda x: freq_labels[x],
-                    horizontal=True,
-                )
+            freq_labels = {0: t["reminder_once"], 1: t["reminder_daily"], 7: t["reminder_weekly"], 14: t["reminder_biweekly"], 30: t["reminder_monthly"]}
+            freq_order = [0, 1, 7, 14, 30]
+            default_fd = edit_data.get("frequency_days", 0) if edit_data else 0
+            fd_index = freq_order.index(default_fd) if default_fd in freq_order else 0
+            rem_freq_val = st.radio(
+                t["reminder_frequency"],
+                options=freq_order, index=fd_index,
+                format_func=lambda x: freq_labels[x],
+                horizontal=True,
+            )
 
-                if st.form_submit_button(t["save_reminder_btn"], use_container_width=True):
-                    if rem_title.strip():
-                        data = {
-                            "title": rem_title.strip(),
-                            "description": rem_desc.strip(),
-                            "reminder_type": rem_type_val,
-                            "due_date": str(rem_date),
-                            "frequency_days": rem_freq_val,
-                            "round_number": st.session_state.current_round,
-                        }
-                        if is_edit and edit_id:
-                            db_update_reminder(edit_id, data)
-                            msg = t["reminder_updated"]
-                        else:
-                            db_insert_reminder(st.session_state.current_user_id, data)
-                            msg = t["reminder_saved"]
-                        st.success(msg)
-                        time.sleep(0.5)
-                        st.session_state.edit_reminder_id = None
-                        st.session_state.sub_view = "reminders_all"
-                        st.rerun()
+            if st.button(t["save_reminder_btn"], key="save_rem_btn", use_container_width=True):
+                if rem_title.strip():
+                    data = {
+                        "title": rem_title.strip(),
+                        "description": rem_desc.strip(),
+                        "reminder_type": rem_type_val,
+                        "due_date": str(rem_date),
+                        "frequency_days": rem_freq_val,
+                        "round_number": st.session_state.current_round,
+                    }
+                    if is_edit and edit_id:
+                        db_update_reminder(edit_id, data)
+                        msg = t["reminder_updated"]
                     else:
-                        st.error("&#x274c; Tafadhali weka jina la kikumbusho!")
+                        db_insert_reminder(st.session_state.current_user_id, data)
+                        msg = t["reminder_saved"]
+                    st.success(msg)
+                    time.sleep(0.5)
+                    st.session_state.edit_reminder_id = None
+                    st.session_state.sub_view = "reminders_all"
+                    st.rerun()
+                else:
+                    st.error("&#x274c; Tafadhali weka jina la kikumbusho!")
 
             if st.button("&#x2190; " + t["back_to_reminders"], key="back_rem_form", use_container_width=True):
                 st.session_state.edit_reminder_id = None
