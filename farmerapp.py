@@ -2038,11 +2038,10 @@ else:
                     edit_data = rr
                     break
 
-        st.markdown(f"""<div style="text-align:center;margin-bottom:20px;"><span style="font-size:48px;">{'&#x270f;&#xfe0f;' if is_edit else '&#x2795;'}</span><h3 style="color:#FFD700;margin:8px 0 2px 0;font-size:24px;font-weight:800;">{t['reminder_edit'] if is_edit else t['add_reminder']}</h3></div>""", unsafe_allow_html=True)
-
         _, center_f, _ = st.columns([1, 1.8, 1])
         with center_f:
             st.markdown("""<div class="auth-card">""", unsafe_allow_html=True)
+            st.markdown(f"""<div style="text-align:center;margin-bottom:20px;"><span style="font-size:48px;">{'&#x270f;&#xfe0f;' if is_edit else '&#x2795;'}</span><h3 style="color:#FFD700;margin:8px 0 2px 0;font-size:24px;font-weight:800;">{t['reminder_edit'] if is_edit else t['add_reminder']}</h3></div>""", unsafe_allow_html=True)
             rem_type_labels = {
                 "chanjo": t["reminder_type_chanjo"],
                 "dawa": t["reminder_type_dawa"],
