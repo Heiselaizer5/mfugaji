@@ -1174,10 +1174,6 @@ else:
     
     user_sub = db_get_user_by_id(st.session_state.current_user_id)
     
-    # DB connection indicator
-    db_status = "&#x1f7e2; Supabase" if use_supabase else "&#x1f7e3; SQLite"
-    st.markdown(f'<div style="text-align:right; font-size:11px; color:#666; margin-bottom:4px;">{db_status}</div>', unsafe_allow_html=True)
-    
     subscription_end_text = ""
     if user_sub and user_sub.get("subscription_end"):
         try:
