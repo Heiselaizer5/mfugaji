@@ -1211,6 +1211,28 @@ else:
         for record in entry["sales_records"]:
             lifetime_revenue += record["revenue"]
 
+    # --- Reminder Alerts ---
+    today_str = date.today().strftime("%Y-%m-%d")
+    all_reminders = db_get_reminders(st.session_state.current_user_id, include_done=False)
+    overdue_reminders = [r for r in all_reminders if r["due_date"] < today_str]
+    due_today_reminders = [r for r in all_reminders if r["due_date"] == today_str]
+    upcoming_reminders = [r for r in all_reminders if r["due_date"] > today_str]
+
+    if all_reminders:
+        st.info(f"📋 Una reminder {len(all_reminders)} zinazosubiri / You have {len(all_reminders)} pending reminder(s)", icon="📋")
+    
+    if overdue_reminders:
+        for r in overdue_reminders:
+            st.error(f"🚨 **{r['title']}** — Imechelewa / Overdue ({r['due_date']})", icon="🚨")
+
+    if due_today_reminders:
+        for r in due_today_reminders:
+            st.warning(f"⏰ **{r['title']}** — Leo / Today ({r['due_date']})", icon="⏰")
+
+    if upcoming_reminders:
+        for r in upcoming_reminders[:5]:
+            st.info(f"📌 **{r['title']}** — {r['due_date']}", icon="📌")
+
     if st.session_state.sub_view == "dashboard":
         st.markdown(f"""<div style="text-align:center; margin-bottom:20px;">
             <h2 style="color:#FFF; margin:0; font-size:30px; font-weight:800;">{t["welcome"]}</h2>
@@ -1326,11 +1348,9 @@ else:
                 st.rerun()
 
         # --- Reminders Section ---
-        reminders = db_get_reminders(st.session_state.current_user_id, include_done=False)
-        today_str = date.today().strftime("%Y-%m-%d")
-        overdue = [r for r in reminders if r["due_date"] < today_str]
-        due_soon = [r for r in reminders if r["due_date"] == today_str]
-        upcoming = [r for r in reminders if r["due_date"] > today_str][:5]
+        overdue = [r for r in overdue_reminders]
+        due_soon = [r for r in due_today_reminders]
+        upcoming = [r for r in all_reminders if r["due_date"] > today_str][:5]
 
         st.markdown(f"""
         <div style="background:linear-gradient(135deg,#1a1a2e,#16213e); border:1px solid #2a2a4a; border-radius:20px; padding:20px 24px; box-shadow:0 8px 32px rgba(0,0,0,0.4); margin-top:16px;">
