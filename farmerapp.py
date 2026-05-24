@@ -139,6 +139,83 @@ def db_insert_sale_record(user_id, dk, rec):
     conn.commit()
     conn.close()
 
+def db_get_reminders(user_id, include_done=False):
+    query = "*"
+    if use_supabase:
+        try:
+            q = sb.table("reminders").select(query).eq("user_id", user_id).order("due_date")
+            if not include_done:
+                q = q.eq("is_done", 0)
+            result = q.execute()
+            return result.data if result.data else []
+        except:
+            return []
+    conn = get_db()
+    sql = "SELECT * FROM reminders WHERE user_id = ?"
+    if not include_done:
+        sql += " AND is_done = 0"
+    sql += " ORDER BY due_date"
+    rows = conn.execute(sql, (user_id,)).fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+def db_insert_reminder(user_id, data):
+    now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    record = {
+        "user_id": user_id,
+        "title": data["title"],
+        "description": data.get("description", ""),
+        "reminder_type": data.get("reminder_type", "general"),
+        "due_date": data.get("due_date", now_str[:10]),
+        "frequency_days": int(data.get("frequency_days", 0)),
+        "is_done": 0,
+        "round_number": int(data.get("round_number", 0)),
+        "created_at": now_str,
+    }
+    if use_supabase:
+        try:
+            result = sb.table("reminders").insert(record).execute()
+            return result.data[0]["id"] if result.data else None
+        except:
+            return None
+    conn = get_db()
+    conn.execute("""INSERT INTO reminders (user_id, title, description, reminder_type, due_date, frequency_days, is_done, round_number, created_at)
+                    VALUES (?,?,?,?,?,?,?,?,?)""",
+                 (record["user_id"], record["title"], record["description"], record["reminder_type"],
+                  record["due_date"], record["frequency_days"], record["is_done"],
+                  record["round_number"], record["created_at"]))
+    conn.commit()
+    cur = conn.execute("SELECT last_insert_rowid()")
+    rid = cur.fetchone()[0]
+    conn.close()
+    return rid
+
+def db_update_reminder(reminder_id, updates):
+    if use_supabase:
+        try:
+            sb.table("reminders").update(updates).eq("id", reminder_id).execute()
+        except:
+            pass
+        return
+    conn = get_db()
+    set_parts = ", ".join(f"{k} = ?" for k in updates)
+    vals = list(updates.values()) + [reminder_id]
+    conn.execute(f"UPDATE reminders SET {set_parts} WHERE id = ?", vals)
+    conn.commit()
+    conn.close()
+
+def db_delete_reminder(reminder_id):
+    if use_supabase:
+        try:
+            sb.table("reminders").delete().eq("id", reminder_id).execute()
+        except:
+            pass
+        return
+    conn = get_db()
+    conn.execute("DELETE FROM reminders WHERE id = ?", (reminder_id,))
+    conn.commit()
+    conn.close()
+
 def db_archive_round(user_id, round_number, summary_json):
     now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     if use_supabase:
@@ -243,6 +320,18 @@ def init_db():
             archived_at TEXT NOT NULL,
             summary_json TEXT NOT NULL,
             UNIQUE(user_id, round_number)
+        );
+        CREATE TABLE IF NOT EXISTS reminders (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            title TEXT NOT NULL,
+            description TEXT DEFAULT '',
+            reminder_type TEXT DEFAULT 'general',
+            due_date TEXT NOT NULL,
+            frequency_days INTEGER DEFAULT 0,
+            is_done INTEGER DEFAULT 0,
+            round_number INTEGER DEFAULT 0,
+            created_at TEXT
         );
     """)
     cols = [row[1] for row in conn.execute("PRAGMA table_info(users)").fetchall()]
@@ -398,6 +487,8 @@ if "round_history_expanded" not in st.session_state:
     st.session_state.round_history_expanded = False
 if "expanded_round" not in st.session_state:
     st.session_state.expanded_round = None
+if "edit_reminder_id" not in st.session_state:
+    st.session_state.edit_reminder_id = None
 
 init_db()
 
@@ -531,6 +622,48 @@ translations = {
             "What is your favorite food?",
             "What is your favorite sports team?"
         ],
+        "reminders_title": "&#x1f4cb; Reminders & Schedule",
+        "add_reminder": "&#x2795; Add Reminder",
+        "view_all_reminders": "&#x1f441; View All",
+        "no_reminders": "No reminders yet.",
+        "no_reminders_hint": "Click 'Add Reminder' to create one.",
+        "reminder_type": "Type",
+        "reminder_title": "Title",
+        "reminder_date": "Date",
+        "reminder_frequency": "Frequency",
+        "reminder_once": "Once",
+        "reminder_daily": "Every Day",
+        "reminder_weekly": "Every 7 Days",
+        "reminder_biweekly": "Every 14 Days",
+        "reminder_monthly": "Every 30 Days",
+        "reminder_status": "Status",
+        "reminder_done": "&#x2705; Done",
+        "reminder_pending": "&#x23f3; Pending",
+        "reminder_overdue": "&#x274c; Overdue",
+        "mark_done": "&#x2705; Mark Done",
+        "delete_reminder": "&#x274c; Delete",
+        "reminder_saved": "Reminder saved!",
+        "reminder_deleted": "Reminder deleted!",
+        "reminder_updated": "Reminder updated!",
+        "reminder_type_chanjo": "&#x1f489; Vaccine",
+        "reminder_type_dawa": "&#x1f48a; Medicine",
+        "reminder_type_chakula": "&#x1f33e; Feed",
+        "reminder_type_general": "&#x1f4cc; General",
+        "save_reminder_btn": "&#x1f4be; Save Reminder",
+        "reminder_subtitle": "Manage vaccination, medicine, feed & general reminders",
+        "back_to_reminders": "&#x2190; Back to Reminders",
+        "reminder_desc": "Description (optional)",
+        "reminder_desc_placeholder": "E.g. Give with water in the morning",
+        "reminder_round": "Round",
+        "reminders_due_soon": "Due Soon",
+        "reminders_overdue_text": "Overdue",
+        "reminders_upcoming": "Upcoming",
+        "reminders_done_text": "Completed",
+        "reminder_snooze": "&#x23f0; Snooze 1 Day",
+        "reminder_edit": "&#x270f; Edit",
+        "reminder_today": "Today",
+        "reminder_tomorrow": "Tomorrow",
+        "reminder_header": "&#x1f4cb; All Reminders",
     },
     "Swahili": {
         "title": "MFUGAJI KWANZA", "subtitle": "Mfumo wa Kisasa wa Usimamizi wa Kuku",
@@ -633,6 +766,48 @@ translations = {
             "Chakula chako favorite ni kipi?",
             "Timu yako favorite ya michezo ni gani?"
         ],
+        "reminders_title": "&#x1f4cb; Vikumbusho na Ratiba",
+        "add_reminder": "&#x2795; Ongeza Kikumbusho",
+        "view_all_reminders": "&#x1f441; Angalia Zote",
+        "no_reminders": "Hakuna vikumbusho bado.",
+        "no_reminders_hint": "Bonyeza 'Ongeza Kikumbusho' kuunda kipya.",
+        "reminder_type": "Aina",
+        "reminder_title": "Jina",
+        "reminder_date": "Tarehe",
+        "reminder_frequency": "Mara",
+        "reminder_once": "Mara Moja",
+        "reminder_daily": "Kila Siku",
+        "reminder_weekly": "Kila Siku 7",
+        "reminder_biweekly": "Kila Siku 14",
+        "reminder_monthly": "Kila Siku 30",
+        "reminder_status": "Hali",
+        "reminder_done": "&#x2705; Imefanyika",
+        "reminder_pending": "&#x23f3; Inasubiri",
+        "reminder_overdue": "&#x274c; Imechelewa",
+        "mark_done": "&#x2705; Imefanyika",
+        "delete_reminder": "&#x274c; Futa",
+        "reminder_saved": "Kikumbusho kimehifadhiwa!",
+        "reminder_deleted": "Kikumbusho kimefutwa!",
+        "reminder_updated": "Kikumbusho kimebadilishwa!",
+        "reminder_type_chanjo": "&#x1f489; Chanjo",
+        "reminder_type_dawa": "&#x1f48a; Dawa",
+        "reminder_type_chakula": "&#x1f33e; Chakula",
+        "reminder_type_general": "&#x1f4cc; Nyingine",
+        "save_reminder_btn": "&#x1f4be; Hifadhi Kikumbusho",
+        "reminder_subtitle": "Dhibiti vikumbusho vya chanjo, dawa, chakula na mengine",
+        "back_to_reminders": "&#x2190; Rudi Kwenye Vikumbusho",
+        "reminder_desc": "Maelezo (si lazima)",
+        "reminder_desc_placeholder": "Mfano: Changanya na maji asubuhi",
+        "reminder_round": "Awamu",
+        "reminders_due_soon": "Inakaribia",
+        "reminders_overdue_text": "Imechelewa",
+        "reminders_upcoming": "Inayofuata",
+        "reminders_done_text": "Imekamilika",
+        "reminder_snooze": "&#x23f0; Nikumbushe Kesho",
+        "reminder_edit": "&#x270f; Badilisha",
+        "reminder_today": "Leo",
+        "reminder_tomorrow": "Kesho",
+        "reminder_header": "&#x1f4cb; Vikumbusho Vyote",
     }
 }
 
@@ -1153,6 +1328,77 @@ else:
                 st.session_state.sub_view = "kumbukumbu_mauzo"
                 st.session_state.edit_sale_key = None
                 st.rerun()
+
+        # --- Reminders Section ---
+        reminders = db_get_reminders(st.session_state.current_user_id, include_done=False)
+        today_str = date.today().strftime("%Y-%m-%d")
+        overdue = [r for r in reminders if r["due_date"] < today_str]
+        due_soon = [r for r in reminders if r["due_date"] == today_str]
+        upcoming = [r for r in reminders if r["due_date"] > today_str][:5]
+
+        st.markdown(f"""
+        <div style="background:linear-gradient(135deg,#1a1a2e,#16213e); border:1px solid #2a2a4a; border-radius:20px; padding:20px 24px; box-shadow:0 8px 32px rgba(0,0,0,0.4); margin-top:16px;">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
+                <div>
+                    <span style="font-size:24px;">&#x23f0;</span>
+                    <span style="color:#FFD700; font-size:17px; font-weight:700; margin-left:8px;">{t['reminders_title']}</span>
+                </div>
+            </div>
+        """, unsafe_allow_html=True)
+
+        if overdue:
+            for r in overdue[:3]:
+                icon = {"chanjo": "&#x1f489;", "dawa": "&#x1f48a;", "chakula": "&#x1f33e;"}.get(r["reminder_type"], "&#x1f4cc;")
+                st.markdown(f"""
+                <div style="background:linear-gradient(135deg,#2a0a0a,#3a1010); border-left:5px solid #FF5252; border-radius:10px; padding:10px 14px; margin-bottom:6px;">
+                    <div style="display:flex; justify-content:space-between; align-items:center;">
+                        <span style="color:#FFF; font-size:13px; font-weight:600;">{icon} {r['title']}</span>
+                        <span style="color:#FF5252; font-size:11px; font-weight:700;">&#x274c; {t['reminders_overdue_text']} ({r['due_date']})</span>
+                    </div>
+                </div>
+                """, unsafe_allow_html=True)
+
+        if due_soon:
+            for r in due_soon[:3]:
+                icon = {"chanjo": "&#x1f489;", "dawa": "&#x1f48a;", "chakula": "&#x1f33e;"}.get(r["reminder_type"], "&#x1f4cc;")
+                st.markdown(f"""
+                <div style="background:linear-gradient(135deg,#2a2a0a,#3a3a10); border-left:5px solid #FFD700; border-radius:10px; padding:10px 14px; margin-bottom:6px;">
+                    <div style="display:flex; justify-content:space-between; align-items:center;">
+                        <span style="color:#FFF; font-size:13px; font-weight:600;">{icon} {r['title']}</span>
+                        <span style="color:#FFD700; font-size:11px; font-weight:700;">&#x23f0; {t['reminder_today']}</span>
+                    </div>
+                </div>
+                """, unsafe_allow_html=True)
+
+        for r in upcoming:
+            icon = {"chanjo": "&#x1f489;", "dawa": "&#x1f48a;", "chakula": "&#x1f33e;"}.get(r["reminder_type"], "&#x1f4cc;")
+            st.markdown(f"""
+            <div style="background:#12121a; border-left:5px solid #38bdf8; border-radius:10px; padding:10px 14px; margin-bottom:6px;">
+                <div style="display:flex; justify-content:space-between; align-items:center;">
+                    <span style="color:#FFF; font-size:13px; font-weight:600;">{icon} {r['title']}</span>
+                    <span style="color:#38bdf8; font-size:11px; font-weight:700;">&#x1f4c5; {r['due_date']}</span>
+                </div>
+            </div>
+            """, unsafe_allow_html=True)
+
+        if not reminders:
+            st.markdown(f"""
+            <div style="padding:16px; text-align:center; border:2px dashed #2a2a4a; border-radius:12px;">
+                <p style="color:#AAA; font-size:14px; margin:0 0 4px 0;">{t['no_reminders']}</p>
+                <p style="color:#666; font-size:12px; margin:0;">{t['no_reminders_hint']}</p>
+            </div>
+            """, unsafe_allow_html=True)
+
+        col_rem1, col_rem2 = st.columns(2)
+        with col_rem1:
+            if st.button(t["add_reminder"], key="add_reminder_btn", use_container_width=True):
+                st.session_state.sub_view = "reminders_add"
+                st.rerun()
+        with col_rem2:
+            if st.button(t["view_all_reminders"], key="view_reminders_btn", use_container_width=True):
+                st.session_state.sub_view = "reminders_all"
+                st.rerun()
+        st.markdown("</div>", unsafe_allow_html=True)
 
         # --- Rounds History ---
         arrow = "&#x25bc;" if st.session_state.round_history_expanded else "&#x25b6;"
@@ -1746,4 +1992,176 @@ else:
         if st.button("&#x2190; Rudi Dashibodi / Back to Dashboard", use_container_width=True):
             st.session_state.sub_view = "dashboard"
             st.rerun()
+
+    elif st.session_state.sub_view == "reminders_all":
+        st.markdown(f"""<div style="text-align:center; padding:5px 0 15px 0;">
+            <span style="font-size:36px;">&#x23f0;</span>
+            <h2 style="color:#FFD700; margin:5px 0 2px 0; font-size:26px; font-weight:800;">{t['reminder_header']}</h2>
+            <p style="color:#888; font-size:13px; margin:0;">{t['reminder_subtitle']}</p>
+        </div>""", unsafe_allow_html=True)
+
+        all_reminders = db_get_reminders(st.session_state.current_user_id, include_done=True)
+        if not all_reminders:
+            st.markdown(f"""
+            <div style="background:linear-gradient(135deg,#0a0a1a,#1a1a2e); border-radius:20px; padding:40px 20px; text-align:center; border:2px dashed #2a2a4a;">
+                <div style="font-size:56px; margin-bottom:10px;">&#x23f0;</div>
+                <p style="color:#FFD700; font-size:18px; font-weight:700; margin:0 0 6px 0;">{t['no_reminders']}</p>
+                <p style="color:#666; font-size:13px; margin:0;">{t['no_reminders_hint']}</p>
+            </div>
+            """, unsafe_allow_html=True)
+        else:
+            today_str = date.today().strftime("%Y-%m-%d")
+            for r in sorted(all_reminders, key=lambda x: x["due_date"]):
+                rid = r["id"]
+                is_done = r.get("is_done", 0)
+                overdue = not is_done and r["due_date"] < today_str
+                due_today = not is_done and r["due_date"] == today_str
+                icon = {"chanjo": "&#x1f489;", "dawa": "&#x1f48a;", "chakula": "&#x1f33e;"}.get(r["reminder_type"], "&#x1f4cc;")
+                type_label = {"chanjo": t["reminder_type_chanjo"], "dawa": t["reminder_type_dawa"], "chakula": t["reminder_type_chakula"]}.get(r["reminder_type"], t["reminder_type_general"])
+
+                if is_done:
+                    border = "border-left:5px solid #00E676"
+                    bg = "background:#0a1a0a"
+                    status_badge = f"<span style='color:#00E676; font-size:11px; font-weight:700;'>{t['reminder_done']}</span>"
+                elif overdue:
+                    border = "border-left:5px solid #FF5252"
+                    bg = "background:#1a0a0a"
+                    status_badge = f"<span style='color:#FF5252; font-size:11px; font-weight:700;'>{t['reminder_overdue']}</span>"
+                elif due_today:
+                    border = "border-left:5px solid #FFD700"
+                    bg = "background:#1a1a0a"
+                    status_badge = f"<span style='color:#FFD700; font-size:11px; font-weight:700;'>{t['reminder_today']}</span>"
+                else:
+                    border = "border-left:5px solid #38bdf8"
+                    bg = "background:#0a0a1a"
+                    status_badge = f"<span style='color:#38bdf8; font-size:11px; font-weight:700;'>&#x1f4c5; {r['due_date']}</span>"
+
+                st.markdown(f"""
+                <div style="{bg}; border-radius:12px; padding:12px 16px; margin-bottom:8px; {border};">
+                    <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap;">
+                        <div>
+                            <span style="color:#FFF; font-size:14px; font-weight:600;">{icon} {r['title']}</span>
+                            <span style="color:#888; font-size:11px; margin-left:8px;">{type_label}</span>
+                            <br><span style="color:#666; font-size:11px;">{r.get('description', '')}</span>
+                        </div>
+                        <div style="display:flex; align-items:center; gap:8px;">
+                            {status_badge}
+                            {f"<span style='color:#888; font-size:10px;'>Kila {r['frequency_days']}d</span>" if r['frequency_days'] > 0 else ""}
+                        </div>
+                    </div>
+                </div>
+                """, unsafe_allow_html=True)
+
+                c1, c2, c3 = st.columns([1, 1, 1])
+                if not is_done:
+                    with c1:
+                        if st.button(t["mark_done"], key=f"rem_done_{rid}", use_container_width=True):
+                            db_update_reminder(rid, {"is_done": 1})
+                            st.success(t["reminder_updated"])
+                            time.sleep(0.3)
+                            st.rerun()
+                with c2:
+                    if st.button(t["reminder_edit"], key=f"rem_edit_{rid}", use_container_width=True):
+                        st.session_state.edit_reminder_id = rid
+                        st.session_state.sub_view = "reminders_edit"
+                        st.rerun()
+                with c3:
+                    if st.button(t["delete_reminder"], key=f"rem_del_{rid}", use_container_width=True):
+                        db_delete_reminder(rid)
+                        st.success(t["reminder_deleted"])
+                        time.sleep(0.3)
+                        st.rerun()
+
+        if st.button(t["add_reminder"], key="add_from_all", use_container_width=True):
+            st.session_state.sub_view = "reminders_add"
+            st.rerun()
+        if st.button("&#x2190; " + t["back_dashboard"], key="back_from_all", use_container_width=True):
+            st.session_state.sub_view = "dashboard"
+            st.rerun()
+
+    elif st.session_state.sub_view == "reminders_add" or st.session_state.sub_view == "reminders_edit":
+        is_edit = st.session_state.sub_view == "reminders_edit"
+        edit_id = st.session_state.edit_reminder_id if is_edit else None
+        edit_data = None
+        if is_edit and edit_id:
+            all_r = db_get_reminders(st.session_state.current_user_id, include_done=True)
+            for rr in all_r:
+                if rr["id"] == edit_id:
+                    edit_data = rr
+                    break
+
+        st.markdown(f"""<div style="text-align:center; padding:5px 0 15px 0;">
+            <span style="font-size:36px;">{'&#x270f;&#xfe0f;' if is_edit else '&#x2795;'}</span>
+            <h2 style="color:#FFD700; margin:5px 0 2px 0; font-size:24px; font-weight:800;">{t['reminder_edit'] if is_edit else t['add_reminder']}</h2>
+        </div>""", unsafe_allow_html=True)
+
+        _, center_f, _ = st.columns([1, 2, 1])
+        with center_f:
+            with st.form(key="reminder_form"):
+                rem_types = [
+                    ("chanjo", t["reminder_type_chanjo"]),
+                    ("dawa", t["reminder_type_dawa"]),
+                    ("chakula", t["reminder_type_chakula"]),
+                    ("general", t["reminder_type_general"]),
+                ]
+                rt_index = 0
+                if edit_data:
+                    for i, (val, _) in enumerate(rem_types):
+                        if val == edit_data.get("reminder_type", "general"):
+                            rt_index = i
+                            break
+                rem_type = st.selectbox(t["reminder_type"], options=[v for _, v in rem_types], index=rt_index)
+                rem_type_val = [k for k, v in rem_types][[v for _, v in rem_types].index(rem_type)]
+
+                rem_title = st.text_input(t["reminder_title"], value=edit_data["title"] if edit_data else "", placeholder="E.g. Gumboro vaccine, Buy feed...")
+                rem_desc = st.text_input(t["reminder_desc"], value=edit_data.get("description", "") if edit_data else "", placeholder=t["reminder_desc_placeholder"])
+                default_date = edit_data["due_date"] if edit_data else str(date.today())
+                rem_date = st.date_input(t["reminder_date"], value=datetime.strptime(default_date, "%Y-%m-%d").date())
+
+                freq_opts = [
+                    (0, t["reminder_once"]),
+                    (1, t["reminder_daily"]),
+                    (7, t["reminder_weekly"]),
+                    (14, t["reminder_biweekly"]),
+                    (30, t["reminder_monthly"]),
+                ]
+                fd_index = 0
+                if edit_data:
+                    ed_fd = edit_data.get("frequency_days", 0)
+                    for i, (val, _) in enumerate(freq_opts):
+                        if val == ed_fd:
+                            fd_index = i
+                            break
+                rem_freq = st.selectbox(t["reminder_frequency"], options=[v for _, v in freq_opts], index=fd_index)
+                rem_freq_val = [k for k, v in freq_opts][[v for _, v in freq_opts].index(rem_freq)]
+
+                if st.form_submit_button(t["save_reminder_btn"], use_container_width=True):
+                    if rem_title.strip():
+                        data = {
+                            "title": rem_title.strip(),
+                            "description": rem_desc.strip(),
+                            "reminder_type": rem_type_val,
+                            "due_date": str(rem_date),
+                            "frequency_days": rem_freq_val,
+                            "round_number": st.session_state.current_round,
+                        }
+                        if is_edit and edit_id:
+                            db_update_reminder(edit_id, data)
+                            msg = t["reminder_updated"]
+                        else:
+                            db_insert_reminder(st.session_state.current_user_id, data)
+                            msg = t["reminder_saved"]
+                        st.success(msg)
+                        time.sleep(0.5)
+                        st.session_state.edit_reminder_id = None
+                        st.session_state.sub_view = "reminders_all"
+                        st.rerun()
+                    else:
+                        st.error("&#x274c; Tafadhali weka jina la kikumbusho!")
+
+            if st.button("&#x2190; " + t["back_to_reminders"], key="back_rem_form", use_container_width=True):
+                st.session_state.edit_reminder_id = None
+                st.session_state.sub_view = "reminders_all"
+                st.rerun()
+
 
