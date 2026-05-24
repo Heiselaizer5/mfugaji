@@ -2028,6 +2028,16 @@ else:
             st.rerun()
 
     elif st.session_state.sub_view == "reminders_add" or st.session_state.sub_view == "reminders_edit":
+        st.markdown("""
+<style>
+div[data-testid="stHorizontalBlock"]:last-of-type > div[data-testid="column"]:nth-child(2) > div {
+    background: linear-gradient(145deg,#1a1a2e,#16213e) !important;
+    border: 1px solid #2a2a4a !important;
+    border-radius: 20px !important;
+    padding: 32px !important;
+    box-shadow: 0 8px 32px rgba(0,0,0,0.4) !important;
+}
+</style>""", unsafe_allow_html=True)
         is_edit = st.session_state.sub_view == "reminders_edit"
         edit_id = st.session_state.edit_reminder_id if is_edit else None
         edit_data = None
@@ -2040,7 +2050,6 @@ else:
 
         _, center_f, _ = st.columns([1, 1.8, 1])
         with center_f:
-            st.markdown("""<style>div[data-testid="column"]:has(> div div.reminder-wrap) > div{background:linear-gradient(145deg,#1a1a2e,#16213e)!important;border:1px solid #2a2a4a!important;border-radius:20px!important;padding:32px!important;box-shadow:0 8px 32px rgba(0,0,0,0.4)!important;}</style><div class="reminder-wrap" style="display:none;"></div>""", unsafe_allow_html=True)
             icon = '&#x270f;&#xfe0f;' if is_edit else '&#x2795;'
             title = t['reminder_edit'] if is_edit else t['add_reminder']
             st.markdown(f"<h3 style='text-align:center;color:#FFD700;font-size:24px;font-weight:800;margin-top:0;'>{icon} {title}</h3>", unsafe_allow_html=True)
