@@ -10,19 +10,29 @@ app = FastAPI(title="Mfugaji Kwanza")
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
 
 # ========================
-# DATABASE LAYER (same as original)
+# CONFIG — set these env vars for Supabase
+# ========================
+SUPABASE_URL = os.environ.get("SUPABASE_URL", "")
+SUPABASE_KEY = os.environ.get("SUPABASE_KEY", "")
+ADMIN_USERNAME = os.environ.get("ADMIN_USER", "admin")
+ADMIN_PASSWORD = os.environ.get("ADMIN_PASS", "Admin@2025!")
+
+# ========================
+# DATABASE LAYER
 # ========================
 use_supabase = False
 sb = None
-try:
-    supabase_url = os.environ.get("SUPABASE_URL", "")
-    supabase_key = os.environ.get("SUPABASE_KEY", "")
-    if supabase_url and supabase_key:
+if SUPABASE_URL and SUPABASE_KEY:
+    try:
         from supabase import create_client
-        sb = create_client(supabase_url, supabase_key)
+        sb = create_client(SUPABASE_URL, SUPABASE_KEY)
         use_supabase = True
-except:
-    pass
+        print("✅ Using Supabase database")
+    except Exception as e:
+        print(f"⚠️ Supabase init error: {e}")
+
+if not use_supabase:
+    print("📁 Using SQLite database (local)")
 
 def get_db():
     conn = sqlite3.connect("farm_data.db")
@@ -364,6 +374,7 @@ def init_db():
             username TEXT UNIQUE NOT NULL,
             password TEXT NOT NULL,
             is_activated INTEGER DEFAULT 0,
+            is_admin INTEGER DEFAULT 0,
             subscription_start TEXT,
             subscription_end TEXT,
             security_question TEXT,
@@ -414,10 +425,19 @@ def init_db():
         );
     """)
     cols = [row[1] for row in conn.execute("PRAGMA table_info(users)").fetchall()]
-    for col in ["subscription_start","subscription_end","security_question","security_answer"]:
+    for col in ["subscription_start","subscription_end","security_question","security_answer","is_admin"]:
         if col not in cols:
             conn.execute(f"ALTER TABLE users ADD COLUMN {col} TEXT")
     conn.commit()
+    
+    # Create default admin if not exists
+    existing = conn.execute("SELECT id FROM users WHERE is_admin = 1").fetchone()
+    if not existing:
+        conn.execute("INSERT OR IGNORE INTO users (username, password, is_activated, is_admin) VALUES (?, ?, 1, 1)",
+                     (ADMIN_USERNAME, ADMIN_PASSWORD))
+        conn.commit()
+        print(f"✅ Default admin created: {ADMIN_USERNAME}")
+    
     conn.close()
 
 init_db()
@@ -662,14 +682,19 @@ async def login(data: dict):
     user = db_get_user_by_username(username)
     if user and user.get("password") == password:
         token = make_token()
-        active = check_subscription_expiry(user["id"])
+        is_admin = bool(user.get("is_admin", 0))
+        active = True if is_admin else check_subscription_expiry(user["id"])
         sub = get_subscription_info(user["id"])
         sessions[token] = {
             "user_id": user["id"],
             "username": username,
             "is_activated": active,
+            "is_admin": is_admin,
             "sub_info": sub
         }
+        if is_admin:
+            return {"ok": True, "token": token, "user_id": user["id"], "username": username,
+                    "is_activated": True, "is_admin": True, "sub_info": sub}
         farm = db_get_farm_data(user["id"])
         reminders = db_get_reminders(user["id"], include_done=False)
         return {"ok": True, "token": token, "user_id": user["id"], "username": username,
@@ -814,6 +839,55 @@ async def view_round(token: str, round_number: int):
     farm = json.loads(rnd["summary_json"])
     return {"round": rnd, "farm": farm}
 
+@app.get("/api/admin/users/{token}")
+async def admin_get_users(token: str):
+    if token not in sessions or not sessions[token].get("is_admin"):
+        return {"error": "auth"}
+    if use_supabase:
+        result = sb.table("users").select("id,username,is_activated,is_admin,subscription_end").execute()
+        return {"users": result.data}
+    conn = get_db()
+    rows = conn.execute("SELECT id, username, is_activated, is_admin, subscription_end FROM users").fetchall()
+    conn.close()
+    return {"users": [dict(r) for r in rows]}
+
+@app.get("/api/admin/user_data/{token}/{user_id}")
+async def admin_get_user_data(token: str, user_id: int):
+    if token not in sessions or not sessions[token].get("is_admin"):
+        return {"error": "auth"}
+    farm = db_get_farm_data(user_id)
+    reminders = db_get_reminders(user_id, include_done=False)
+    user = db_get_user_by_id(user_id)
+    return {"farm": farm, "reminders": reminders, "username": user["username"] if user else "Unknown"}
+
+@app.get("/api/admin/activate/{token}/{user_id}")
+async def admin_activate_user(token: str, user_id: int):
+    if token not in sessions or not sessions[token].get("is_admin"):
+        return {"error": "auth"}
+    expiry = activate_subscription(user_id, days=30)
+    return {"ok": True}
+
+@app.get("/api/admin/delete_user/{token}/{user_id}")
+async def admin_delete_user(token: str, user_id: int):
+    if token not in sessions or not sessions[token].get("is_admin"):
+        return {"error": "auth"}
+    if use_supabase:
+        sb.table("farm_dates").delete().eq("user_id", user_id).execute()
+        sb.table("sales_records").delete().eq("user_id", user_id).execute()
+        sb.table("reminders").delete().eq("user_id", user_id).execute()
+        sb.table("rounds").delete().eq("user_id", user_id).execute()
+        sb.table("users").delete().eq("id", user_id).execute()
+    else:
+        conn = get_db()
+        conn.execute("DELETE FROM farm_dates WHERE user_id = ?", (user_id,))
+        conn.execute("DELETE FROM sales_records WHERE user_id = ?", (user_id,))
+        conn.execute("DELETE FROM reminders WHERE user_id = ?", (user_id,))
+        conn.execute("DELETE FROM rounds WHERE user_id = ?", (user_id,))
+        conn.execute("DELETE FROM users WHERE id = ?", (user_id,))
+        conn.commit()
+        conn.close()
+    return {"ok": True}
+
 # ========================
 # MAIN HTML PAGE (SPA)
 # ========================
@@ -921,6 +995,7 @@ let state = {
     user_id: localStorage.getItem('user_id') || '',
     username: localStorage.getItem('username') || '',
     is_activated: localStorage.getItem('is_activated') === 'true',
+    is_admin: localStorage.getItem('is_admin') === 'true',
     lang: localStorage.getItem('lang') || 'Swahili',
     view: 'dashboard',
     farm: {},
@@ -930,7 +1005,9 @@ let state = {
     edit_sale_key: null,
     edit_reminder: null,
     edit_dev_date: null,
-    sub_info: { active: false, days_left: 0, end_text: '' }
+    sub_info: { active: false, days_left: 0, end_text: '' },
+    admin_users: [],
+    admin_view_user: null,
 };
 
 function t(key) {
@@ -1080,11 +1157,15 @@ function doLogin() {
     api('POST', '/api/login', { username: user, password: pass }).then(d => {
         if (d.ok) {
             state.token = d.token; state.user_id = d.user_id; state.username = d.username;
-            state.is_activated = d.is_activated; state.farm = d.farm || {};
+            state.is_activated = d.is_activated;
+            state.is_admin = d.is_admin || false;
+            state.farm = d.farm || {};
             state.reminders = d.reminders || []; state.sub_info = d.sub_info || { active: false };
             localStorage.setItem('token', d.token); localStorage.setItem('user_id', d.user_id);
             localStorage.setItem('username', d.username); localStorage.setItem('is_activated', d.is_activated);
-            state.view = 'dashboard'; render();
+            localStorage.setItem('is_admin', d.is_admin ? 'true' : 'false');
+            state.view = d.is_admin ? 'admin' : 'dashboard';
+            render();
         } else {
             $('login_err').textContent = t('error_msg');
         }
@@ -1348,6 +1429,110 @@ function logout() {
     render();
 }
 
+// ===== ADMIN VIEWS =====
+function AdminView() {
+    let html = `<div class="flex-between mb-4"><h2 style="color:#FFD700;">🛡️ Admin Panel</h2>`;
+    html += `<div><span class="badge badge-gold">${state.username}</span> <button class="btn btn-sm btn-outline" onclick="logout()">Logout</button></div></div>`;
+    
+    // load users
+    api('GET', '/api/admin/users/' + state.token).then(d => {
+        if (d.users) state.admin_users = d.users;
+        render();
+    });
+    
+    html += '<div class="card"><h3 style="color:#38bdf8;">👥 All Users</h3>';
+    if (state.admin_users.length) {
+        for (let u of state.admin_users) {
+            const isAdmin = u.is_admin == 1 || u.is_admin === true || u.is_admin === '1';
+            html += `<div class="flex-between mt-2" style="padding:10px 14px;background:#12121a;border-radius:10px;">
+                <div><span style="font-weight:600;">${u.username}</span>
+                ${isAdmin ? '<span class="badge badge-gold" style="margin-left:6px;">Admin</span>' : ''}
+                <span class="badge ${u.is_activated == 1 || u.is_activated === true ? 'badge-green' : 'badge-red'}" style="margin-left:6px;">
+                    ${u.is_activated == 1 || u.is_activated === true ? 'Active' : 'Inactive'}</span>
+                </div>
+                <div>`;
+            if (!isAdmin) {
+                html += `<button class="btn btn-sm btn-outline" onclick="adminViewUser(${u.id})">👁</button>`;
+                if (u.is_activated != 1 && u.is_activated !== true) {
+                    html += `<button class="btn btn-sm btn-gold" onclick="adminActivate(${u.id})" style="margin-left:4px;">🔓</button>`;
+                }
+                html += `<button class="btn btn-sm btn-danger" onclick="adminDeleteUser(${u.id})" style="margin-left:4px;">🗑️</button>`;
+            }
+            html += `</div></div>`;
+        }
+    } else {
+        html += '<p class="text-muted text-center mt-2">Loading users...</p>';
+    }
+    html += '</div>';
+    html += `<button class="btn btn-outline mt-4" onclick="goDashboard()">📊 Back to Dashboard</button>`;
+    return html;
+}
+
+function adminViewUser(userId) {
+    state.admin_view_user = userId;
+    state.view = 'admin_user';
+    render();
+}
+
+function adminActivate(userId) {
+    api('GET', '/api/admin/activate/' + state.token + '/' + userId).then(d => {
+        if (d.ok) { state.view = 'admin'; render(); }
+    });
+}
+
+function adminDeleteUser(userId) {
+    if (!confirm('Delete this user and all their data?')) return;
+    api('GET', '/api/admin/delete_user/' + state.token + '/' + userId).then(d => {
+        if (d.ok) { state.view = 'admin'; render(); }
+    });
+}
+
+function AdminUserView() {
+    let html = `<button class="btn btn-outline btn-sm" onclick="state.view='admin';render();">← Back to Admin</button>`;
+    const uid = state.admin_view_user;
+    if (!uid) { state.view = 'admin'; render(); return; }
+    
+    api('GET', '/api/admin/user_data/' + state.token + '/' + uid).then(d => {
+        if (d.error) return;
+        const u = document.getElementById('admin_user_data');
+        if (!u) return;
+        let farm = d.farm || {};
+        let reminders = d.reminders || [];
+        let totalChicks = 0, totalMorts = 0, totalCosts = 0, totalRev = 0;
+        for (let dk in farm) {
+            const e = farm[dk];
+            totalChicks += e.chicks_qty || 0;
+            totalMorts += e.mortality || 0;
+            totalCosts += (e.chicks_cost||0)+(e.feed_cost||0)+(e.med_cost||0)+(e.other_cost||0);
+            for (let s of (e.sales_records||[])) totalRev += s.revenue || 0;
+        }
+        const today = new Date().toISOString().slice(0,10);
+        let rh = `<div class="card mt-4"><h3 style="color:#00E676;">👤 ${d.username}</h3>`;
+        rh += `<div class="grid-3 mt-2">
+            <div class="stat-box"><div class="num text-blue">${totalChicks}</div><div class="label">Total Chicks</div></div>
+            <div class="stat-box"><div class="num text-red">${totalMorts}</div><div class="label">Deaths</div></div>
+            <div class="stat-box"><div class="num text-green">${totalChicks-totalMorts}</div><div class="label">Remaining</div></div>
+        </div>`;
+        const net = totalRev - totalCosts;
+        rh += `<div class="flex-between mt-2"><span class="text-muted">Expenses</span><span class="text-red">${totalCosts.toLocaleString()} TSH</span></div>`;
+        rh += `<div class="flex-between"><span class="text-muted">Revenue</span><span class="text-green">${totalRev.toLocaleString()} TSH</span></div>`;
+        rh += `<div class="flex-between" style="border-top:1px solid #2a2a4a;padding-top:8px;margin-top:8px;"><span style="font-weight:700;">Net</span><span style="font-weight:900;color:${net>=0?'#00E676':'#FF5252'};">${Math.abs(net).toLocaleString()} TSH</span></div>`;
+        rh += '</div>';
+        if (reminders.length) {
+            rh += '<div class="card mt-2"><h4 style="color:#FFD700;">⏰ Reminders</h4>';
+            for (let r of reminders) {
+                const cls = r.due_date < today ? 'badge-red' : r.due_date === today ? 'badge-gold' : 'badge-blue';
+                rh += `<div class="flex-between mt-2" style="padding:8px;background:#12121a;border-radius:8px;"><span>${r.title}</span><span class="badge ${cls}">${r.due_date}</span></div>`;
+            }
+            rh += '</div>';
+        }
+        u.innerHTML = rh;
+    });
+    
+    html += '<div id="admin_user_data" class="mt-4"><p class="text-muted text-center">Loading...</p></div>';
+    return html;
+}
+
 // ===== RENDER =====
 function render() {
     const app = $('app');
@@ -1367,7 +1552,11 @@ function render() {
         if (state.view === 'signup') html += SignupView();
         else if (state.view === 'reset') html += ResetView();
         else { state.view = 'login'; html += LoginView(); }
-    } else if (!state.is_activated && state.view !== 'payment') {
+    } else if (state.is_admin && state.view === 'admin') {
+        html += AdminView();
+    } else if (state.is_admin && state.view === 'admin_user') {
+        html += AdminUserView();
+    } else if (!state.is_admin && !state.is_activated && state.view !== 'payment') {
         state.view = 'payment';
         html += PaymentView();
     } else if (state.view === 'payment') {
@@ -1387,8 +1576,8 @@ function render() {
     } else if (state.view === 'profit') {
         html += ProfitView();
     } else {
-        state.view = 'dashboard';
-        html += DashboardView();
+        state.view = state.is_admin ? 'admin' : 'dashboard';
+        html += state.is_admin ? AdminView() : DashboardView();
     }
     
     app.innerHTML = html;
