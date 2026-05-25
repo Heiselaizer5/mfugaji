@@ -27,12 +27,12 @@ if SUPABASE_URL and SUPABASE_KEY:
         from supabase import create_client
         sb = create_client(SUPABASE_URL, SUPABASE_KEY)
         use_supabase = True
-        print("✅ Using Supabase database")
+        print("[OK] Using Supabase database")
     except Exception as e:
-        print(f"⚠️ Supabase init error: {e}")
+        print(f"[WARN] Supabase init error: {e}")
 
 if not use_supabase:
-    print("📁 Using SQLite database (local)")
+    print("[OK] Using SQLite database (local)")
 
 def get_db():
     conn = sqlite3.connect("farm_data.db")
@@ -436,7 +436,7 @@ def init_db():
         conn.execute("INSERT OR IGNORE INTO users (username, password, is_activated, is_admin) VALUES (?, ?, 1, 1)",
                      (ADMIN_USERNAME, ADMIN_PASSWORD))
         conn.commit()
-        print(f"✅ Default admin created: {ADMIN_USERNAME}")
+        print(f"[OK] Default admin created: {ADMIN_USERNAME}")
     
     conn.close()
 
@@ -1008,6 +1008,8 @@ let state = {
     sub_info: { active: false, days_left: 0, end_text: '' },
     admin_users: [],
     admin_view_user: null,
+    round_history_open: false,
+    viewing_round: null,
 };
 
 function t(key) {
@@ -1405,12 +1407,137 @@ function DashboardView() {
     html += `<button class="btn btn-sm btn-outline mt-2" onclick="goReminders()">${t('add_reminder')}</button>`;
     html += '</div>';
     
+    // === ROUND SECTION ===
+    const rounds = state.rounds || [];
+    const currentRound = rounds.length ? Math.max(...rounds.map(r => r.round_number)) + 1 : 1;
+    
+    html += '<div class="flex-between mt-4 mb-2">';
+    html += `<div><span style="color:#888;font-size:12px;">${t('current_round')}</span> <span style="color:#00E676;font-size:22px;font-weight:800;margin-left:8px;">${currentRound}</span></div>`;
+    html += `<button class="btn btn-sm btn-gold" onclick="archiveRound()" style="width:auto;">🔄 ${t('move_to_next_round')}</button>`;
+    html += '</div>';
+    
+    // round history toggle
+    const isOpen = state.round_history_open;
+    html += '<div class="card" style="padding:14px;">';
+    html += `<div class="flex-between" onclick="toggleRoundHist()" style="cursor:pointer;">
+        <span style="color:#FFD700;font-weight:700;font-size:15px;">📦 ${t('round_history')} (${rounds.length})</span>
+        <span style="color:#888;">${isOpen ? '▲' : '▼'}</span>
+    </div>`;
+    
+    if (isOpen) {
+        if (rounds.length) {
+            for (let r of rounds) {
+                const rn = r.round_number;
+                const rdate = r.archived_at ? r.archived_at.slice(0,10) : '';
+                html += `<div class="flex-between mt-2" style="padding:10px;background:#12121a;border-radius:8px;">
+                    <div><span style="font-weight:600;color:#FFD700;">📦 ${rn}</span> <span class="text-muted">📅 ${rdate}</span></div>
+                    <div>
+                    <button class="btn btn-sm btn-outline" onclick="event.stopPropagation();viewRound(${rn})">👁 ${t('edit_btn')}</button>
+                    <button class="btn btn-sm btn-danger" onclick="event.stopPropagation();delRound(${rn})">🗑️</button>
+                    </div>
+                </div>`;
+            }
+        } else {
+            html += `<p class="text-muted text-center mt-2">${t('no_rounds')}</p>`;
+        }
+    }
+    html += '</div>';
+    
     // records buttons
     html += '<div class="grid-2 mt-4">';
     html += `<button class="btn btn-outline" onclick="goKumbuDev()">🐣 ${t('kumbu_dev')}</button>`;
     html += `<button class="btn btn-outline" onclick="goKumbuSale()">💰 ${t('kumbu_sale')}</button>`;
     html += '</div>';
     
+    return html;
+}
+
+function toggleRoundHist() {
+    state.round_history_open = !state.round_history_open;
+    render();
+}
+
+function archiveRound() {
+    if (!Object.keys(state.farm).length) { alert('No data to archive.'); return; }
+    api('POST', '/api/round/archive', { token: state.token, farm: state.farm }).then(d => {
+        if (d.ok) {
+            state.farm = {};
+            state.view = 'dashboard';
+            api('GET', '/api/data/' + state.token).then(r => {
+                if (r.farm) state.farm = r.farm;
+                if (r.reminders) state.reminders = r.reminders;
+                state.rounds = r.round_history || [];
+                render();
+            });
+        }
+    });
+}
+
+function viewRound(rn) {
+    api('GET', '/api/round/' + state.token + '/' + rn).then(d => {
+        if (d.error) return;
+        state.viewing_round = d;
+        state.view = 'view_round';
+        render();
+    });
+}
+
+function delRound(rn) {
+    if (!confirm('Delete round ' + rn + '?')) return;
+    api('POST', '/api/round/delete', { user_id: state.user_id, round_number: rn }).then(d => {
+        if (d.ok) {
+            api('GET', '/api/data/' + state.token).then(r => {
+                state.rounds = r.round_history || [];
+                render();
+            });
+        }
+    });
+}
+
+function RoundView() {
+    const data = state.viewing_round;
+    if (!data) return '<p class="text-muted text-center">Loading...</p>';
+    const farm = JSON.parse(data.farm || typeof data.farm === 'object' ? data.farm : {});
+    const rnd = data.round || {};
+    
+    let html = `<button class="btn btn-outline btn-sm" onclick="state.view='dashboard';render()">← ${t('back_btn')}</button>`;
+    html += `<div class="text-center mt-4"><span style="font-size:40px;">📦</span>`;
+    html += `<h2 style="color:#FFD700;">📦 Round ${rnd.round_number}</h2>`;
+    html += `<p class="text-muted">📅 ${rnd.archived_at ? rnd.archived_at.slice(0,10) : ''}</p></div>`;
+    
+    let totalChicks = 0, totalMorts = 0, totalCosts = 0, totalRev = 0;
+    for (let dk in farm) {
+        const e = farm[dk];
+        totalChicks += e.chicks_qty || 0;
+        totalMorts += e.mortality || 0;
+        totalCosts += (e.chicks_cost||0)+(e.feed_cost||0)+(e.med_cost||0)+(e.other_cost||0);
+        for (let s of (e.sales_records||[])) totalRev += s.revenue || 0;
+    }
+    const net = totalRev - totalCosts;
+    html += '<div class="grid-3 mt-2">';
+    html += `<div class="stat-box"><div class="num text-blue">${totalChicks}</div><div class="label">Total Chicks</div></div>`;
+    html += `<div class="stat-box"><div class="num text-red">${totalMorts}</div><div class="label">Deaths</div></div>`;
+    html += `<div class="stat-box"><div class="num text-green">${totalChicks-totalMorts}</div><div class="label">Remaining</div></div>`;
+    html += '</div>';
+    html += `<div class="card mt-2"><div class="flex-between"><span class="text-muted">Expenses</span><span class="text-red">${totalCosts.toLocaleString()} TSH</span></div>`;
+    html += `<div class="flex-between"><span class="text-muted">Revenue</span><span class="text-green">${totalRev.toLocaleString()} TSH</span></div>`;
+    html += `<div class="flex-between" style="border-top:1px solid #2a2a4a;padding-top:8px;margin-top:8px;"><span style="font-weight:700;">Net</span><span style="font-weight:900;color:${net>=0?'#00E676':'#FF5252'};">${Math.abs(net).toLocaleString()} TSH</span></div></div>`;
+    
+    for (let dk of Object.keys(farm).sort().reverse()) {
+        const e = farm[dk];
+        const dayCost = (e.chicks_cost||0)+(e.feed_cost||0)+(e.med_cost||0)+(e.other_cost||0);
+        html += `<div class="card mt-2" style="padding:14px;"><div class="flex-between"><span style="font-weight:700;">📅 ${dk}</span>`;
+        if (e.sales_records && e.sales_records.length) {
+            let drev = e.sales_records.reduce((a,s) => a+(s.revenue||0), 0);
+            html += `<span class="badge badge-gold">💰 ${drev.toLocaleString()} TSH</span>`;
+        }
+        html += '</div>';
+        html += `<div class="grid-2 mt-2" style="font-size:13px;">
+            <span class="text-muted">Chicks</span><span>${e.chicks_qty||0} 🐥</span>
+            <span class="text-muted">Deaths</span><span class="text-red">${e.mortality||0}</span>
+            <span class="text-muted">Cost</span><span>${dayCost.toLocaleString()} TSH</span>
+        </div></div>`;
+    }
     return html;
 }
 
@@ -1434,37 +1561,37 @@ function AdminView() {
     let html = `<div class="flex-between mb-4"><h2 style="color:#FFD700;">🛡️ Admin Panel</h2>`;
     html += `<div><span class="badge badge-gold">${state.username}</span> <button class="btn btn-sm btn-outline" onclick="logout()">Logout</button></div></div>`;
     
-    // load users
-    api('GET', '/api/admin/users/' + state.token).then(d => {
-        if (d.users) state.admin_users = d.users;
-        render();
-    });
-    
-    html += '<div class="card"><h3 style="color:#38bdf8;">👥 All Users</h3>';
-    if (state.admin_users.length) {
+    // Fetch users only once
+    if (!state.admin_users.length) {
+        api('GET', '/api/admin/users/' + state.token).then(d => {
+            if (d.users) state.admin_users = d.users;
+            render();
+        });
+        html += '<div class="card"><p class="text-muted text-center">Loading users...</p></div>';
+    } else {
+        html += '<div class="card"><h3 style="color:#38bdf8;">👥 All Users</h3>';
         for (let u of state.admin_users) {
             const isAdmin = u.is_admin == 1 || u.is_admin === true || u.is_admin === '1';
+            const isActive = u.is_activated == 1 || u.is_activated === true;
             html += `<div class="flex-between mt-2" style="padding:10px 14px;background:#12121a;border-radius:10px;">
                 <div><span style="font-weight:600;">${u.username}</span>
                 ${isAdmin ? '<span class="badge badge-gold" style="margin-left:6px;">Admin</span>' : ''}
-                <span class="badge ${u.is_activated == 1 || u.is_activated === true ? 'badge-green' : 'badge-red'}" style="margin-left:6px;">
-                    ${u.is_activated == 1 || u.is_activated === true ? 'Active' : 'Inactive'}</span>
+                <span class="badge ${isActive ? 'badge-green' : 'badge-red'}" style="margin-left:6px;">
+                    ${isActive ? 'Active' : 'Inactive'}</span>
                 </div>
                 <div>`;
             if (!isAdmin) {
                 html += `<button class="btn btn-sm btn-outline" onclick="adminViewUser(${u.id})">👁</button>`;
-                if (u.is_activated != 1 && u.is_activated !== true) {
+                if (!isActive) {
                     html += `<button class="btn btn-sm btn-gold" onclick="adminActivate(${u.id})" style="margin-left:4px;">🔓</button>`;
                 }
                 html += `<button class="btn btn-sm btn-danger" onclick="adminDeleteUser(${u.id})" style="margin-left:4px;">🗑️</button>`;
             }
             html += `</div></div>`;
         }
-    } else {
-        html += '<p class="text-muted text-center mt-2">Loading users...</p>';
+        html += '</div>';
+        html += '<button class="btn btn-outline mt-4" onclick="state.view=\'dashboard\';state.admin_users=[];render()">📊 Back to Dashboard</button>';
     }
-    html += '</div>';
-    html += `<button class="btn btn-outline mt-4" onclick="goDashboard()">📊 Back to Dashboard</button>`;
     return html;
 }
 
@@ -1476,21 +1603,29 @@ function adminViewUser(userId) {
 
 function adminActivate(userId) {
     api('GET', '/api/admin/activate/' + state.token + '/' + userId).then(d => {
-        if (d.ok) { state.view = 'admin'; render(); }
+        if (d.ok) {
+            state.admin_users = [];
+            state.view = 'admin'; render();
+        }
     });
 }
 
 function adminDeleteUser(userId) {
     if (!confirm('Delete this user and all their data?')) return;
     api('GET', '/api/admin/delete_user/' + state.token + '/' + userId).then(d => {
-        if (d.ok) { state.view = 'admin'; render(); }
+        if (d.ok) {
+            state.admin_users = [];
+            state.view = 'admin'; render();
+        }
     });
 }
 
 function AdminUserView() {
-    let html = `<button class="btn btn-outline btn-sm" onclick="state.view='admin';render();">← Back to Admin</button>`;
+    let html = `<button class="btn btn-outline btn-sm" onclick="state.view='admin';state.admin_users=[];render()">← Back to Admin</button>`;
     const uid = state.admin_view_user;
-    if (!uid) { state.view = 'admin'; render(); return; }
+    if (!uid) { state.view = 'admin'; state.admin_users = []; render(); return; }
+    
+    html += '<div id="admin_user_data" class="mt-4"><p class="text-muted text-center">Loading...</p></div>';
     
     api('GET', '/api/admin/user_data/' + state.token + '/' + uid).then(d => {
         if (d.error) return;
@@ -1529,7 +1664,6 @@ function AdminUserView() {
         u.innerHTML = rh;
     });
     
-    html += '<div id="admin_user_data" class="mt-4"><p class="text-muted text-center">Loading...</p></div>';
     return html;
 }
 
@@ -1575,6 +1709,8 @@ function render() {
         html += KumbuSaleView();
     } else if (state.view === 'profit') {
         html += ProfitView();
+    } else if (state.view === 'view_round') {
+        html += RoundView();
     } else {
         state.view = state.is_admin ? 'admin' : 'dashboard';
         html += state.is_admin ? AdminView() : DashboardView();
@@ -1800,7 +1936,7 @@ function ProfitView() {
     return html;
 }
 
-function goDashboard() { state.view = 'dashboard'; render(); }
+function goDashboard() { state.view = 'dashboard'; state.admin_users = []; render(); }
 
 // ===== INIT =====
 if (state.token) {
